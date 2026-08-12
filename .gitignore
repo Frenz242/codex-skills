@@ -1,0 +1,19 @@
+# Secrets / local configuration
+.env
+.env.*
+*.key
+*.pem
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Logs / temporary files
+*.log
+*.tmp
+
+# OS
+Thumbs.db
+.DS_Store

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Process Issues"
+  short_description: "Process GitHub issues and TODO inbox"
+  default_prompt: "Use $process-issues to triage and implement the repository backlog."
