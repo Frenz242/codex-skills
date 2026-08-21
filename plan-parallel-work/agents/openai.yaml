@@ -1,0 +1,4 @@
+interface:
+  display_name: "Plan Parallel Work"
+  short_description: "Plan GitHub issues into safe work lanes"
+  default_prompt: "Use $plan-parallel-work to turn this request into dependency-aware GitHub issues and safe parallel Codex work lanes."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sync After Merge"
+  short_description: "Reconcile merged PRs, issues, and local Git"
+  default_prompt: "Use $sync-after-merge to reconcile this repository after recent pull request merges."
