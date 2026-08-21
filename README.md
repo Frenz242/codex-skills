@@ -128,6 +128,30 @@ for the complete skill instructions.
 
 
 
+\### `plan-parallel-work`
+
+
+
+Decomposes large requests and planning material into dependency-aware GitHub issues, safe parallel work lanes, and ready-to-paste Codex prompts without implementing the planned work.
+
+
+
+See `plan-parallel-work/SKILL.md` for the complete skill instructions.
+
+
+
+\### `sync-after-merge`
+
+
+
+Safely synchronizes local Git state after merges and reevaluates GitHub issue dependencies and agent workflow states.
+
+
+
+See `sync-after-merge/SKILL.md` for the complete skill instructions.
+
+
+
 \## Adding a Skill
 
 
