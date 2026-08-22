@@ -252,3 +252,7 @@ End with a concise report containing all of these headings and concrete counts o
 - **Ready issues remaining**: count and issue numbers, retrieved fresh after processing.
 
 Mention any existing branch or pull request that prevented duplicate work. Never report an issue as fixed merely because it was imported, triaged, placed on a branch, or referenced by a draft pull request.
+
+## Post-run observation
+
+After substantive work completes, make one non-blocking call to the shared `../improve-skills/scripts/feedback_store.py record-run` helper for this skill. Record minimal run metadata always; add generalized detailed observations only for material evidence. Recording failure must not fail the primary task, and an observation must never trigger skill modification. Consult the shared [observation protocol](../improve-skills/references/observation-protocol.md) only when detail or diagnosis is needed.

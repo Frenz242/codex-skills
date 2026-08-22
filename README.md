@@ -152,6 +152,30 @@ See `sync-after-merge/SKILL.md` for the complete skill instructions.
 
 
 
+\### `improve-skills`
+
+
+
+Explicitly reviews generalized evidence from real skill runs, evaluates focused existing-skill improvements, and proposes deduplicated new-skill feature requests without self-modifying or auto-merging.
+
+
+
+Its local SQLite feedback store defaults to `%USERPROFILE%\.agents\skill-feedback\skill-feedback.db` (or `~/.agents/skill-feedback/skill-feedback.db`) and is outside this Git repository. Observations are generalized at write time and are not Git-tracked. `CODEX_SKILL_FEEDBACK_DB` may select another stable user-level location.
+
+
+
+Participating skills contain a small non-blocking post-run footer and share the recorder/protocol under `improve-skills/`; future skills follow the same convention unless they document why observation is inappropriate. The observer records evidence only. It never rewrites a skill.
+
+
+
+OpenAI `plugin-eval` is the preferred optional backend for live Codex evaluation and before/after comparison. Observation capture remains Python-standard-library-only when `plugin-eval` is absent; existing-skill evaluation then operates in an explicitly degraded, recommendation-only mode. Configure a locally installed backend through the `plugin-eval` command or `PLUGIN_EVAL_ROOT`.
+
+
+
+See `improve-skills/SKILL.md` for the complete workflow and `improve-skills/references/observation-protocol.md` for participation details.
+
+
+
 \## Adding a Skill
 
 
@@ -207,6 +231,10 @@ new-skill/
 
 
 Do not modify existing skills merely to make their formatting or structure match a newly added skill.
+
+
+
+Every new reusable skill should include the repository's concise post-run observation footer described in `improve-skills/references/observation-protocol.md`. If persistence is inappropriate for that skill, document the opt-out and reason in its `SKILL.md`.
 
 
 
