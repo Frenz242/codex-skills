@@ -167,3 +167,7 @@ Return these sections with concrete issue numbers and `None` where applicable:
 9. **Git/local synchronization status**: fetch/sync actions, branch and default-branch state, and any condition preventing clean synchronization.
 
 Confirm that the final coverage ledger has no unaccounted item. Do not describe issue creation, labeling, or lane assignment as feature implementation.
+
+## Post-run observation
+
+After substantive work completes, make one non-blocking call to the shared `../improve-skills/scripts/feedback_store.py record-run` helper for this skill. Record minimal run metadata always; add generalized detailed observations only for material evidence. Recording failure must not fail the primary task, and an observation must never trigger skill modification. Consult the shared [observation protocol](../improve-skills/references/observation-protocol.md) only when detail or diagnosis is needed.
