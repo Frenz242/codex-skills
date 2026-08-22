@@ -172,7 +172,11 @@ OpenAI `plugin-eval` is the preferred optional backend for live Codex evaluation
 
 
 
-See `improve-skills/SKILL.md` for the complete workflow and `improve-skills/references/observation-protocol.md` for participation details.
+See the [improve-skills README](improve-skills/README.md) for a complete
+explanation of the architecture, evidence lifecycle, evaluation gates, and
+safety model. The [runtime instructions](improve-skills/SKILL.md) remain compact,
+and the [observation protocol](improve-skills/references/observation-protocol.md)
+defines participation details.
 
 
 
