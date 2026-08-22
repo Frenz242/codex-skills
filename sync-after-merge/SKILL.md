@@ -169,3 +169,7 @@ Give a concise report with:
 - open feature-branch integration needs, divergence, local changes, permission failures, or other conditions preventing a complete clean sync.
 
 Say explicitly when no local or GitHub changes were necessary. Do not describe newly ready issues as implemented or fixed.
+
+## Post-run observation
+
+After substantive work completes, make one non-blocking call to the shared `../improve-skills/scripts/feedback_store.py record-run` helper for this skill. Record minimal run metadata always; add generalized detailed observations only for material evidence. Recording failure must not fail the primary task, and an observation must never trigger skill modification. Consult the shared [observation protocol](../improve-skills/references/observation-protocol.md) only when detail or diagnosis is needed.
