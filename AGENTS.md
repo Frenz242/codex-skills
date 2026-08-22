@@ -152,6 +152,14 @@ Do not create empty optional directories.
 
 
 
+\## Shared Skill Observation
+
+
+
+New reusable skills should participate in the lightweight evidence loop by adding the concise post-run footer defined in `improve-skills/references/observation-protocol.md`. The shared helper owns validation and persistence; do not copy the full protocol or SQLite logic into another skill. A skill may opt out only by documenting why recording is inappropriate. Observation remains non-blocking and must never trigger self-modification.
+
+
+
 \## Updating an Existing Skill
 
 

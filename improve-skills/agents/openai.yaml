@@ -1,0 +1,6 @@
+interface:
+  display_name: "Improve Skills"
+  short_description: "Evaluate evidence-backed skill improvements"
+  default_prompt: "Use $improve-skills to review persisted skill evidence and conservatively evaluate one improvement or new-skill proposal."
+policy:
+  allow_implicit_invocation: false
