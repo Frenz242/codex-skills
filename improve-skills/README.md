@@ -51,10 +51,11 @@ focused documentation, executable enforcement, and tests.
 ## How observation works
 
 Participating skills contain a short post-run footer. After substantive work,
-the skill makes one best-effort call to the shared recorder:
+the skill discovers the installed skills repository and makes one best-effort
+call to the shared recorder:
 
 ```text
-python improve-skills/scripts/feedback_store.py record-run \
+python <skills-repository>/improve-skills/scripts/feedback_store.py record-run \
   --skill-path <participating-skill-directory> \
   --invocation-mode explicit \
   --outcome success \
