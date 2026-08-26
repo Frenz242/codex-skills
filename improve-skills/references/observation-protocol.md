@@ -34,6 +34,29 @@ python <skills-repository>/improve-skills/scripts/feedback_store.py record-run \
   --non-blocking
 ```
 
+### Source and target are independent
+
+The default footer above is skill-sourced. Omitting `--source-kind` remains backward compatible when `--skill-path` is present. `--source-kind skill` requires a skill path and discovered version; `--source-kind agent` rejects a skill path and creates no skill identity or version.
+
+Optional global agent guidance may use this contract only when a material reusable problem occurs and no participating skill run owns the observation:
+
+```text
+python <skills-repository>/improve-skills/scripts/feedback_store.py record-run \
+  --source-kind agent \
+  --outcome partial \
+  --context-path <current-repository> \
+  --observation-file <sanitized-json> \
+  --non-blocking
+```
+
+- Do not record routine success or broad task telemetry.
+- Do not duplicate one event as both skill-sourced and agent-sourced.
+- Prefer a participating skill source when the evidence arose during that skill run, even when its target is repository or infrastructure.
+- Never crawl session history, persist transcripts, invoke `$improve-skills`, or automatically inject or rewrite user-level `AGENTS.md`.
+- Generalize and apply every existing privacy-at-write restriction before recording.
+
+The observation target remains `skill`, `repository`, `infrastructure`, or `new-skill`, regardless of source. An infrastructure target may include a stable lowercase `target_component` slug such as `mcp-runtime`; the slug is only a clustering hint and must not contain paths, URLs, accounts, customers, or project identifiers. An agent-sourced skill target must provide `target_skill_path`. Agent-sourced `activation-false-negative` evidence additionally requires explicit user feedback, an external routing benchmark, or an objective check; isolated self-reflection is rejected.
+
 Use the actual invocation mode only when determinable; otherwise use `unknown`. Use ISO-8601 `--started-at` and `--completed-at` when available. The helper emits JSON. A non-blocking failure returns success to the caller with `"ok": false`; do not claim the observation was written.
 
 For a material observation, supply sanitized JSON with `--observation-file` or `--observation-json`. Prefer a file/structured argument mechanism that does not expose sensitive shell history. Allowed fields are deliberately closed; unknown fields such as `raw_prompt` are rejected.

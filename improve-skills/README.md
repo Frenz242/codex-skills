@@ -63,6 +63,25 @@ python <skills-repository>/improve-skills/scripts/feedback_store.py record-run \
   --non-blocking
 ```
 
+Run provenance and evidence ownership are independent:
+
+- `source_kind=skill` means a participating skill invocation produced the evidence and requires `--skill-path` plus normal version discovery.
+- `source_kind=agent` means general Codex work produced material reusable evidence when no participating skill invocation owns the event. It does not accept or invent a skill path or version.
+- Every observation still targets `skill`, `repository`, `infrastructure`, or `new-skill`. Infrastructure evidence may include a privacy-safe lowercase `target_component` slug as a clustering hint.
+
+An optional global observer contract may record an agent-sourced run after the primary task:
+
+```text
+python <skills-repository>/improve-skills/scripts/feedback_store.py record-run \
+  --source-kind agent \
+  --outcome partial \
+  --context-path <current-repository> \
+  --observation-file <sanitized-json> \
+  --non-blocking
+```
+
+This is for material reusable problems only—not blanket telemetry or routine success. Do not record one event under both skill and agent sources, collect session history, or automatically inject or modify user-level `AGENTS.md`. Existing skill footer calls remain backward compatible when `--source-kind` is omitted.
+
 Every substantive run may record minimal metadata. Detailed observations are
 reserved for reusable evidence such as:
 
@@ -213,6 +232,12 @@ The recorder and review helper support these operations:
 Read-only review commands can use the global `--read-only` option. If the
 database does not exist, read-only mode reports that condition without creating
 or migrating a database.
+
+`query` and `clusters` default to skill-sourced evidence so existing skill
+statistics and denominators remain unchanged. Use `--source-kind agent` (or
+`all`), `--target-kind`, and `--target-component` for explicit source/target
+analysis. Query output displays source kind separately from target kind and any
+observer or target skill identity.
 
 ## What the skill deliberately does not do
 
