@@ -10,20 +10,25 @@ Use external routing benchmarks, explicit user reports, or durable task evidence
 
 Participating `SKILL.md` files use this small footer:
 
-> After substantive work completes, make one non-blocking call to the shared `improve-skills/scripts/feedback_store.py record-run` helper. Record minimal run metadata always; include generalized detailed observations only for material evidence. Recording failure must not fail the primary task, and an observation must never trigger skill modification.
+> After substantive work completes, make one non-blocking `record-run` call through the shared portable launcher: `improve-skills/scripts/run_feedback_store.ps1` on Windows or `improve-skills/scripts/run_feedback_store.sh` on POSIX. Record minimal run metadata always; include generalized detailed observations only for material evidence. Recording failure must not fail the primary task, and an observation must never trigger skill modification.
 
 Resolve the helper and skill directory from the installed skill locations; do not hard-code a user or project path. If observation is inappropriate for a skill—for example, a read-only skill whose policy forbids any local persistence—state the opt-out with its reason in that skill’s footer instead of silently omitting participation.
 
 ## Recorder invocation
 
-Use a Python 3 interpreter and the shared CLI. The database defaults to the stable user-level location:
+Use the shared platform launcher rather than invoking `feedback_store.py` directly:
+
+- Windows PowerShell: `& <skills-repository>\improve-skills\scripts\run_feedback_store.ps1`
+- POSIX shell: `<skills-repository>/improve-skills/scripts/run_feedback_store.sh`
+
+The launcher tries `CODEX_SKILL_PYTHON`, the bundled Codex runtime, and standard Python commands, accepting only Python 3.10 or newer. It forwards every argument and preserves the recorder's exit code. The database defaults to the stable user-level location:
 
 - Windows: `%USERPROFILE%\.agents\skill-feedback\skill-feedback.db`
 - POSIX: `~/.agents/skill-feedback/skill-feedback.db`
 
 `CODEX_SKILL_FEEDBACK_DB` may override it. The helper rejects Git-controlled, temporary, and recognized plugin-cache paths. Use a stable user-level path; writability alone does not imply durability.
 
-Minimal successful run:
+Use the launchers for routine recording. The direct Python CLI below documents the equivalent forwarded arguments for debugging; a minimal successful run is:
 
 ```text
 python <skills-repository>/improve-skills/scripts/feedback_store.py record-run \

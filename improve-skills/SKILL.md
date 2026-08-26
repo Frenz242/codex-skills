@@ -39,6 +39,6 @@ Report evidence/counts/versions, classification, backend, action or no-action, v
 
 ## Post-run observation
 
-After substantive work, make one non-blocking `scripts/feedback_store.py record-run` call. Record minimal metadata always and generalized detail only for material evidence. Recording failure must not fail the task or trigger self-modification.
+After substantive work, make one non-blocking `record-run` call through the shared portable launcher: `scripts/run_feedback_store.ps1` on Windows or `scripts/run_feedback_store.sh` on POSIX. Record minimal metadata always; include generalized detail only for material evidence. Recording failure must not fail the primary task or trigger self-modification.
 
 This footer records a skill-sourced run. Separately, optional global agent guidance may record material reusable evidence with `--source-kind agent` when no participating skill invocation owns the event. Never record routine success, duplicate one event under both sources, or inject this contract into global guidance automatically.

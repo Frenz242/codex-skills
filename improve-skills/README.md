@@ -42,6 +42,9 @@ The feature uses progressive disclosure:
   for the relevant part of a review.
 - [`scripts/feedback_store.py`](scripts/feedback_store.py) enforces storage,
   privacy, lifecycle, clustering, and evaluation invariants deterministically.
+- [`scripts/run_feedback_store.ps1`](scripts/run_feedback_store.ps1) and
+  [`scripts/run_feedback_store.sh`](scripts/run_feedback_store.sh) locate a
+  supported Python runtime and forward commands to the recorder.
 - [`tests/test_feedback_store.py`](tests/test_feedback_store.py) verifies those
   invariants and failure boundaries.
 
@@ -52,7 +55,15 @@ focused documentation, executable enforcement, and tests.
 
 Participating skills contain a short post-run footer. After substantive work,
 the skill discovers the installed skills repository and makes one best-effort
-call to the shared recorder:
+call through the shared platform launcher:
+
+- Windows PowerShell: `& <skills-repository>\improve-skills\scripts\run_feedback_store.ps1`
+- POSIX shell: `<skills-repository>/improve-skills/scripts/run_feedback_store.sh`
+
+The launcher tries `CODEX_SKILL_PYTHON`, the bundled Codex runtime, and
+standard Python commands, accepting only Python 3.10 or newer. It preserves
+the recorder's exit code. The launchers are preferred for routine recording;
+the equivalent direct Python CLI remains available for debugging:
 
 ```text
 python <skills-repository>/improve-skills/scripts/feedback_store.py record-run \
