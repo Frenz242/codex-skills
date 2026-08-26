@@ -45,6 +45,7 @@ def observation(
     confidence_tier: str = "isolated-self-observation",
     suggestion_kind: str = "existing-skill",
     candidate_name: str | None = None,
+    target_component: str | None = None,
     positive: bool = False,
 ) -> dict[str, object]:
     value: dict[str, object] = {
@@ -62,6 +63,8 @@ def observation(
         value["target_skill_path"] = str(target_skill_path)
     if candidate_name is not None:
         value["candidate_name"] = candidate_name
+    if target_component is not None:
+        value["target_component"] = target_component
     return value
 
 
@@ -112,13 +115,53 @@ class InitializationTests(StoreCase):
         connection.close()
 
     def test_schema_migration_preserves_existing_rows(self) -> None:
-        connection = self.open(target_schema_version=1)
+        connection = self.open(target_schema_version=3)
         first = self.record_run(connection)
+        version_id = connection.execute(
+            "SELECT skill_version_id FROM skill_runs WHERE run_id = ?", (first["runId"],)
+        ).fetchone()[0]
+        connection.execute(
+            """
+            INSERT INTO observations(
+                observation_id, run_id, primary_target_kind, primary_skill_version_id,
+                category, evidence_type, summary, severity, reusability,
+                confidence_tier, suggestion_kind, state, positive_evidence,
+                summary_fingerprint, created_at
+            ) VALUES ('preserved-observation', ?, 'skill', ?, 'missing-instruction',
+                      'self-observation', 'A generalized historical observation.', 'medium',
+                      'high', 'isolated-self-observation', 'existing-skill', 'observed', 0,
+                      'preserved-fingerprint', '2026-01-01T00:00:00Z')
+            """,
+            (first["runId"], version_id),
+        )
+        connection.execute(
+            """
+            INSERT INTO observation_state_history(
+                history_id, observation_id, from_state, to_state, reason, changed_at
+            ) VALUES ('preserved-history', 'preserved-observation', NULL, 'observed',
+                      'Initial state assigned transactionally', '2026-01-01T00:00:00Z')
+            """
+        )
+        connection.execute(
+            "UPDATE skill_runs SET observation_count = 1 WHERE run_id = ?", (first["runId"],)
+        )
         connection.close()
 
-        connection = self.open(target_schema_version=2)
+        connection = self.open()
         self.assertEqual(1, connection.execute("SELECT COUNT(*) FROM skill_runs").fetchone()[0])
         self.assertEqual(first["runId"], connection.execute("SELECT run_id FROM skill_runs").fetchone()[0])
+        migrated = connection.execute(
+            "SELECT source_kind, skill_version_id, observation_count FROM skill_runs"
+        ).fetchone()
+        self.assertEqual(("skill", version_id, 1), tuple(migrated))
+        self.assertEqual(
+            "preserved-observation",
+            connection.execute("SELECT observation_id FROM observations").fetchone()[0],
+        )
+        self.assertEqual(
+            "preserved-history",
+            connection.execute("SELECT history_id FROM observation_state_history").fetchone()[0],
+        )
         self.assertIsNotNone(
             connection.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='candidate_clusters'"
@@ -342,6 +385,166 @@ class RecordingTests(StoreCase):
             blocker.execute("ROLLBACK")
             blocker.close()
             connection.close()
+
+
+class AgentSourceTests(StoreCase):
+    def test_agent_run_records_without_creating_skill_identity(self) -> None:
+        connection = self.open()
+        spec = observation(
+            "The command broker repeatedly rejected a safe helper invocation.",
+            category="unexpected-environment",
+            target_kind="infrastructure",
+            suggestion_kind="shared-infrastructure",
+            target_component="codex-windows-sandbox",
+        )
+        result = store.record_run(
+            connection,
+            source_kind="agent",
+            outcome="partial",
+            context_path=self.root / "context-one",
+            observations=[spec],
+        )
+
+        self.assertEqual("agent", result["sourceKind"])
+        self.assertIsNone(result["skill"])
+        row = connection.execute(
+            "SELECT source_kind, skill_version_id FROM skill_runs WHERE run_id = ?",
+            (result["runId"],),
+        ).fetchone()
+        self.assertEqual(("agent", None), tuple(row))
+        self.assertEqual(0, connection.execute("SELECT COUNT(*) FROM skill_versions").fetchone()[0])
+        self.assertEqual([], store.query_observations(connection))
+        agent_rows = store.query_observations(
+            connection,
+            source_kind="agent",
+            target_kind="infrastructure",
+            target_component="codex-windows-sandbox",
+        )
+        self.assertEqual(1, len(agent_rows))
+        self.assertEqual("agent", agent_rows[0]["source_kind"])
+        self.assertEqual("codex-windows-sandbox", agent_rows[0]["target_component"])
+        connection.close()
+
+    def test_source_and_skill_combinations_are_rejected(self) -> None:
+        connection = self.open()
+        with self.assertRaisesRegex(store.FeedbackStoreError, "require skill_path"):
+            store.record_run(connection, source_kind="skill")
+        with self.assertRaisesRegex(store.FeedbackStoreError, "must not include skill_path"):
+            store.record_run(connection, source_kind="agent", skill_path=self.skill)
+        with self.assertRaisesRegex(store.FeedbackStoreError, "requires --source-kind"):
+            store.record_run(connection)
+
+        skill_run = self.record_run(connection)
+        version_id = connection.execute(
+            "SELECT skill_version_id FROM skill_runs WHERE run_id = ?", (skill_run["runId"],)
+        ).fetchone()[0]
+        with self.assertRaises(sqlite3.IntegrityError):
+            connection.execute(
+                """
+                INSERT INTO skill_runs(
+                    run_id, skill_version_id, source_kind, started_at, completed_at,
+                    invocation_mode, outcome, run_kind, observation_count, created_at
+                ) VALUES ('invalid-agent', ?, 'agent', '2026-01-01T00:00:00Z',
+                          '2026-01-01T00:00:01Z', 'unknown', 'success', 'live', 0,
+                          '2026-01-01T00:00:01Z')
+                """,
+                (version_id,),
+            )
+        connection.close()
+
+    def test_agent_skill_target_requires_external_activation_evidence(self) -> None:
+        connection = self.open()
+        unsupported = observation(
+            "The skill may have missed an activation opportunity.",
+            category="activation-false-negative",
+            target_skill_path=self.skill,
+        )
+        with self.assertRaisesRegex(store.FeedbackStoreError, "requires explicit user feedback"):
+            store.record_run(
+                connection,
+                source_kind="agent",
+                observations=[unsupported],
+            )
+
+        supported = observation(
+            "Explicit user feedback identified a missed activation.",
+            category="activation-false-negative",
+            evidence_type="explicit-user-feedback",
+            confidence_tier="explicit-user-correction",
+            target_skill_path=self.skill,
+        )
+        result = store.record_run(
+            connection,
+            source_kind="agent",
+            observations=[supported],
+        )
+        self.assertEqual(1, result["observationCount"])
+        row = connection.execute(
+            "SELECT source_kind, skill_version_id FROM skill_runs WHERE run_id = ?",
+            (result["runId"],),
+        ).fetchone()
+        self.assertEqual("agent", row["source_kind"])
+        self.assertIsNone(row["skill_version_id"])
+        connection.close()
+
+    def test_target_component_is_private_safe_and_infrastructure_only(self) -> None:
+        connection = self.open()
+        invalid_slug = observation(
+            target_kind="infrastructure",
+            suggestion_kind="shared-infrastructure",
+            target_component="Customer Runtime",
+        )
+        with self.assertRaisesRegex(store.FeedbackStoreError, "target_component"):
+            store.record_run(connection, source_kind="agent", observations=[invalid_slug])
+
+        wrong_target = observation(target_component="github-cli")
+        with self.assertRaisesRegex(store.FeedbackStoreError, "only valid for infrastructure"):
+            self.record_run(connection, [wrong_target])
+
+        repository_target = observation(
+            target_kind="repository",
+            suggestion_kind="repository-rule",
+        )
+        with self.assertRaisesRegex(store.FeedbackStoreError, "require context_path"):
+            store.record_run(
+                connection,
+                source_kind="agent",
+                observations=[repository_target],
+            )
+        connection.close()
+
+    def test_agent_clusters_filter_by_source_and_target(self) -> None:
+        connection = self.open()
+        result = store.record_run(
+            connection,
+            source_kind="agent",
+            observations=[
+                observation(
+                    "A repeatable broker failure affected helper execution.",
+                    target_kind="infrastructure",
+                    suggestion_kind="shared-infrastructure",
+                    target_component="mcp-runtime",
+                )
+            ],
+        )
+        cluster = store.cluster_observations(
+            connection,
+            problem_key="mcp-runtime-helper-failure",
+            kind="shared-infrastructure",
+            canonical_problem="The runtime broker repeatedly rejects a helper operation.",
+            observation_ids=result["observationIds"],
+        )
+        self.assertEqual(1, cluster["independentRunCount"])
+        self.assertEqual([], store.list_clusters(connection))
+        filtered = store.list_clusters(
+            connection,
+            source_kind="agent",
+            target_kind="infrastructure",
+            target_component="mcp-runtime",
+        )
+        self.assertEqual(1, len(filtered))
+        self.assertEqual(1, filtered[0]["independentRunCount"])
+        connection.close()
 
 
 class PrivacyTests(StoreCase):

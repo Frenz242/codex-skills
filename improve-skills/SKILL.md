@@ -22,7 +22,7 @@ Improve reusable skills from generalized evidence. “No change needed” is suc
 2. Inspect Git status/branches/worktrees/remotes/identity and authoritative GitHub state. Synchronize per policy before mutation; preserve unrelated work.
 3. Inventory installed skills/versions and search skills, issues, and PRs before declaring missing capability.
 4. Run helper `health` and targeted queries. Detect `plugin-eval`; inspect its installed version before assuming syntax.
-5. Group by problem, target, content hash, and distinct run. Consider tier, context, recency, old versions, and counter-evidence; cluster aliases.
+5. Keep run source (`skill` or `agent`) separate from evidence target. Group by problem, target, content hash, and distinct run. Consider tier, context, recency, old versions, and counter-evidence; cluster aliases.
 6. Classify as existing-skill, repository-rule, shared-infrastructure, new-skill, insufficient-evidence, or no-action.
 
 Always read [evidence-and-analysis.md](references/evidence-and-analysis.md). Before mutation, read [evaluation-and-publishing.md](references/evaluation-and-publishing.md). Read [observation-protocol.md](references/observation-protocol.md) for feedback work and [design-provenance.md](references/design-provenance.md) for methodology work.
@@ -40,3 +40,5 @@ Report evidence/counts/versions, classification, backend, action or no-action, v
 ## Post-run observation
 
 After substantive work, make one non-blocking `scripts/feedback_store.py record-run` call. Record minimal metadata always and generalized detail only for material evidence. Recording failure must not fail the task or trigger self-modification.
+
+This footer records a skill-sourced run. Separately, optional global agent guidance may record material reusable evidence with `--source-kind agent` when no participating skill invocation owns the event. Never record routine success, duplicate one event under both sources, or inject this contract into global guidance automatically.

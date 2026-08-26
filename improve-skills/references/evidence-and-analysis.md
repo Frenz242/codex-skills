@@ -1,5 +1,11 @@
 # Evidence and analysis
 
+## Analyze source and target separately
+
+`source_kind` records which execution produced evidence; `target_kind` records what the evidence appears to concern. Never infer blame or ownership from source alone. Skill-sourced infrastructure evidence remains infrastructure-targeted, while agent-sourced skill evidence requires a real target skill identity and durable external support for activation misses.
+
+Skill-focused queries, run denominators, and cluster statistics exclude agent runs by default. Include `source_kind=agent` or all sources only deliberately, display source and target separately, and keep distinct-run counting keyed to the run so duplicate source/target records from one event cannot inflate recurrence. Agent-sourced repository, infrastructure, and new-skill evidence follows the same human-gated classification and recurrence thresholds as equivalent skill-sourced targets.
+
 ## Preserve facts; derive priorities
 
 Store raw evidence type, category, run, version, severity, reuse judgment, and positive/negative nature separately from later ranking. Do not rewrite historical facts when the weighting model changes and do not assign fake probabilistic precision.

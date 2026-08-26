@@ -25,7 +25,7 @@ import uuid
 from datetime import datetime, timezone
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 DATABASE_ENV = "CODEX_SKILL_FEEDBACK_DB"
 PLUGIN_EVAL_ROOT_ENV = "PLUGIN_EVAL_ROOT"
 DEFAULT_BUSY_TIMEOUT_MS = 1_500
@@ -118,6 +118,7 @@ SUGGESTION_KINDS = {
     "no-action",
 }
 TARGET_KINDS = {"skill", "repository", "infrastructure", "new-skill"}
+SOURCE_KINDS = {"skill", "agent"}
 INVOCATION_MODES = {"explicit", "implicit", "unknown"}
 OUTCOMES = {"success", "partial", "failure", "cancelled", "unknown"}
 CLUSTER_KINDS = {
@@ -142,6 +143,7 @@ OBSERVATION_KEYS = {
     "target_skill_path",
     "related_skill_paths",
     "candidate_name",
+    "target_component",
     "positive",
 }
 
@@ -693,7 +695,57 @@ def _migration_three(connection: sqlite3.Connection) -> None:
     )
 
 
-MIGRATIONS = {1: _migration_one, 2: _migration_two, 3: _migration_three}
+def _migration_four(connection: sqlite3.Connection) -> None:
+    _execute_script_in_transaction(
+        connection,
+        """
+        CREATE TABLE skill_runs_v4 (
+            run_id TEXT PRIMARY KEY,
+            skill_version_id TEXT REFERENCES skill_versions(version_id),
+            source_kind TEXT NOT NULL CHECK (source_kind IN ('skill', 'agent')),
+            started_at TEXT NOT NULL,
+            completed_at TEXT NOT NULL,
+            invocation_mode TEXT NOT NULL CHECK (invocation_mode IN ('explicit', 'implicit', 'unknown')),
+            outcome TEXT NOT NULL CHECK (outcome IN ('success', 'partial', 'failure', 'cancelled', 'unknown')),
+            run_kind TEXT NOT NULL DEFAULT 'live' CHECK (run_kind IN ('live', 'backfill')),
+            context_hash TEXT,
+            observation_count INTEGER NOT NULL DEFAULT 0 CHECK (observation_count >= 0),
+            source_key TEXT,
+            created_at TEXT NOT NULL,
+            CHECK (
+                (source_kind = 'skill' AND skill_version_id IS NOT NULL)
+                OR (source_kind = 'agent' AND skill_version_id IS NULL)
+            )
+        );
+
+        INSERT INTO skill_runs_v4(
+            run_id, skill_version_id, source_kind, started_at, completed_at,
+            invocation_mode, outcome, run_kind, context_hash,
+            observation_count, source_key, created_at
+        )
+        SELECT
+            run_id, skill_version_id, 'skill', started_at, completed_at,
+            invocation_mode, outcome, run_kind, context_hash,
+            observation_count, source_key, created_at
+        FROM skill_runs;
+
+        DROP TABLE skill_runs;
+        ALTER TABLE skill_runs_v4 RENAME TO skill_runs;
+
+        CREATE INDEX idx_runs_skill_version ON skill_runs(skill_version_id);
+        CREATE INDEX idx_runs_source_kind ON skill_runs(source_kind);
+        CREATE UNIQUE INDEX idx_runs_backfill_source
+        ON skill_runs(source_key)
+        WHERE run_kind = 'backfill' AND source_key IS NOT NULL;
+
+        ALTER TABLE observations ADD COLUMN target_component TEXT
+            CHECK (target_component IS NULL OR primary_target_kind = 'infrastructure');
+        CREATE INDEX idx_observations_target_component ON observations(target_component);
+        """,
+    )
+
+
+MIGRATIONS = {1: _migration_one, 2: _migration_two, 3: _migration_three, 4: _migration_four}
 
 
 def open_store(
@@ -730,7 +782,14 @@ def open_store(
                 (version, utc_now()),
             )
 
-    _write_with_retry(connection, migrate)
+    connection.execute("PRAGMA foreign_keys = OFF")
+    try:
+        _write_with_retry(connection, migrate)
+    finally:
+        connection.execute("PRAGMA foreign_keys = ON")
+    violations = connection.execute("PRAGMA foreign_key_check").fetchall()
+    if violations:
+        raise FeedbackStoreError("Schema migration produced invalid foreign-key references")
     return connection, path
 
 
@@ -807,6 +866,7 @@ def _upsert_skill_version(connection: sqlite3.Connection, metadata: dict[str, An
 def _observation_fingerprint(spec: dict[str, Any], target_version_id: str | None) -> str:
     material = {
         "target_kind": spec["target_kind"],
+        "target_component": spec.get("target_component"),
         "target_version": target_version_id,
         "category": spec["category"],
         "evidence_type": spec["evidence_type"],
@@ -852,6 +912,11 @@ def validate_observation_spec(spec: dict[str, Any]) -> dict[str, Any]:
     normalized["candidate_name"] = (
         _safe_slug(str(spec["candidate_name"]), "candidate_name") if spec.get("candidate_name") else None
     )
+    normalized["target_component"] = (
+        _safe_slug(str(spec["target_component"]), "target_component")
+        if spec.get("target_component")
+        else None
+    )
     related = spec.get("related_skill_paths", [])
     if not isinstance(related, list) or not all(isinstance(item, str) for item in related):
         raise FeedbackStoreError("related_skill_paths must be a JSON array of paths")
@@ -870,8 +935,12 @@ def validate_observation_spec(spec: dict[str, Any]) -> dict[str, Any]:
     if normalized["target_kind"] == "skill":
         if spec.get("candidate_name"):
             raise FeedbackStoreError("candidate_name is only valid for new-skill targets")
+        if normalized["target_component"]:
+            raise FeedbackStoreError("target_component is only valid for infrastructure targets")
     elif spec.get("target_skill_path"):
         raise FeedbackStoreError("target_skill_path is only valid for skill targets")
+    elif normalized["target_kind"] != "infrastructure" and normalized["target_component"]:
+        raise FeedbackStoreError("target_component is only valid for infrastructure targets")
     if normalized["target_kind"] == "new-skill" and not normalized["candidate_name"]:
         raise FeedbackStoreError("new-skill observations require candidate_name")
     return normalized
@@ -885,25 +954,44 @@ def _should_skip_task_specific(spec: dict[str, Any]) -> bool:
     )
 
 
+def _validate_observation_for_source(spec: dict[str, Any], source_kind: str) -> None:
+    if (
+        source_kind == "agent"
+        and spec["target_kind"] == "skill"
+        and spec["category"] == "activation-false-negative"
+        and spec["evidence_type"]
+        not in {"explicit-user-feedback", "activation-benchmark", "objective-check"}
+    ):
+        raise FeedbackStoreError(
+            "Agent-sourced activation-false-negative evidence requires explicit user feedback, "
+            "an external activation benchmark, or an objective check"
+        )
+
+
 def _prepare_observations(
     connection: sqlite3.Connection,
-    run_skill_path: str | Path,
+    run_skill_path: str | Path | None,
+    source_kind: str,
     observations: Sequence[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], int, int]:
     salt = _privacy_salt(connection)
-    run_metadata = discover_skill_metadata(run_skill_path, salt)
     prepared: list[dict[str, Any]] = []
     skipped_task_specific = 0
     skipped_duplicates = 0
     seen: set[str] = set()
     for raw in observations:
         spec = validate_observation_spec(raw)
+        _validate_observation_for_source(spec, source_kind)
         if _should_skip_task_specific(spec):
             skipped_task_specific += 1
             continue
         target_metadata = None
         if spec["target_kind"] == "skill":
-            target_path = spec.get("target_skill_path") or str(run_skill_path)
+            target_path = spec.get("target_skill_path") or run_skill_path
+            if target_path is None:
+                raise FeedbackStoreError(
+                    "Agent-sourced skill targets require target_skill_path"
+                )
             target_metadata = discover_skill_metadata(target_path, salt)
         related_metadata = [discover_skill_metadata(item, salt) for item in spec["related_skill_paths"]]
         provisional_target = target_metadata["version_key"] if target_metadata else None
@@ -926,7 +1014,8 @@ def _prepare_observations(
 def record_run(
     connection: sqlite3.Connection,
     *,
-    skill_path: str | Path,
+    skill_path: str | Path | None = None,
+    source_kind: str | None = None,
     invocation_mode: str = "unknown",
     outcome: str = "unknown",
     started_at: str | None = None,
@@ -936,6 +1025,18 @@ def record_run(
     run_kind: str = "live",
     source_key: str | None = None,
 ) -> dict[str, Any]:
+    if source_kind is None:
+        if skill_path is None:
+            raise FeedbackStoreError(
+                "record-run requires --source-kind when --skill-path is omitted"
+            )
+        source_kind = "skill"
+    if source_kind not in SOURCE_KINDS:
+        raise FeedbackStoreError(f"Invalid source_kind: {source_kind}")
+    if source_kind == "skill" and skill_path is None:
+        raise FeedbackStoreError("Skill-sourced runs require skill_path")
+    if source_kind == "agent" and skill_path is not None:
+        raise FeedbackStoreError("Agent-sourced runs must not include skill_path")
     if invocation_mode not in INVOCATION_MODES:
         raise FeedbackStoreError(f"Invalid invocation_mode: {invocation_mode}")
     if outcome not in OUTCOMES:
@@ -954,38 +1055,70 @@ def record_run(
         raise FeedbackStoreError("started_at must not be after completed_at")
 
     salt = _privacy_salt(connection)
-    run_metadata = discover_skill_metadata(skill_path, salt)
+    run_metadata = discover_skill_metadata(skill_path, salt) if skill_path is not None else None
     prepared, skipped_task_specific, skipped_duplicates = _prepare_observations(
-        connection, skill_path, observations
+        connection, skill_path, source_kind, observations
     )
+    if context_path is None and any(
+        item["spec"]["target_kind"] == "repository" for item in prepared
+    ):
+        raise FeedbackStoreError("Repository-targeted observations require context_path")
     context_digest = _context_hash(connection, context_path)
     run_id = str(uuid.uuid4())
     created_at = utc_now()
 
     def write(conn: sqlite3.Connection) -> dict[str, Any]:
-        run_version_id = _upsert_skill_version(conn, run_metadata)
-        conn.execute(
-            """
-            INSERT INTO skill_runs(
-                run_id, skill_version_id, started_at, completed_at,
-                invocation_mode, outcome, run_kind, context_hash,
-                observation_count, source_key, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                run_id,
-                run_version_id,
-                start,
-                completed,
-                invocation_mode,
-                outcome,
-                run_kind,
-                context_digest,
-                len(prepared),
-                source_key,
-                created_at,
-            ),
-        )
+        run_version_id = _upsert_skill_version(conn, run_metadata) if run_metadata else None
+        run_columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(skill_runs)")}
+        if "source_kind" in run_columns:
+            conn.execute(
+                """
+                INSERT INTO skill_runs(
+                    run_id, skill_version_id, source_kind, started_at, completed_at,
+                    invocation_mode, outcome, run_kind, context_hash,
+                    observation_count, source_key, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    run_version_id,
+                    source_kind,
+                    start,
+                    completed,
+                    invocation_mode,
+                    outcome,
+                    run_kind,
+                    context_digest,
+                    len(prepared),
+                    source_key,
+                    created_at,
+                ),
+            )
+        else:
+            if source_kind != "skill":
+                raise FeedbackStoreError("Agent-sourced runs require schema version 4 or newer")
+            conn.execute(
+                """
+                INSERT INTO skill_runs(
+                    run_id, skill_version_id, started_at, completed_at,
+                    invocation_mode, outcome, run_kind, context_hash,
+                    observation_count, source_key, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    run_version_id,
+                    start,
+                    completed,
+                    invocation_mode,
+                    outcome,
+                    run_kind,
+                    context_digest,
+                    len(prepared),
+                    source_key,
+                    created_at,
+                ),
+            )
         observation_ids: list[str] = []
         for item in prepared:
             spec = item["spec"]
@@ -1002,8 +1135,8 @@ def record_run(
                     primary_skill_version_id, category, evidence_type,
                     summary, workaround_summary, severity, reusability,
                     confidence_tier, suggestion_kind, state, candidate_name,
-                    positive_evidence, summary_fingerprint, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'observed', ?, ?, ?, ?)
+                    target_component, positive_evidence, summary_fingerprint, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'observed', ?, ?, ?, ?, ?)
                 """,
                 (
                     observation_id,
@@ -1019,6 +1152,7 @@ def record_run(
                     spec["confidence_tier"],
                     spec["suggestion_kind"],
                     spec["candidate_name"],
+                    spec["target_component"],
                     int(spec["positive"]),
                     item["fingerprint"],
                     created_at,
@@ -1042,11 +1176,12 @@ def record_run(
         return {
             "ok": True,
             "runId": run_id,
-            "skill": run_metadata["skill_name"],
-            "repoCommit": run_metadata["repo_commit"],
-            "contentHash": run_metadata["content_hash"],
-            "bundleHash": run_metadata["bundle_hash"],
-            "dirty": bool(run_metadata["dirty"]),
+            "sourceKind": source_kind,
+            "skill": run_metadata["skill_name"] if run_metadata else None,
+            "repoCommit": run_metadata["repo_commit"] if run_metadata else None,
+            "contentHash": run_metadata["content_hash"] if run_metadata else None,
+            "bundleHash": run_metadata["bundle_hash"] if run_metadata else None,
+            "dirty": bool(run_metadata["dirty"]) if run_metadata else None,
             "observationIds": observation_ids,
             "observationCount": len(observation_ids),
             "skippedTaskSpecific": skipped_task_specific,
@@ -1064,8 +1199,8 @@ def record_observation(
 ) -> dict[str, Any]:
     run = connection.execute(
         """
-        SELECT r.run_id, v.skill_path_hash, v.skill_name
-        FROM skill_runs r JOIN skill_versions v ON v.version_id = r.skill_version_id
+        SELECT r.run_id, r.source_kind, r.context_hash, v.skill_path_hash, v.skill_name
+        FROM skill_runs r LEFT JOIN skill_versions v ON v.version_id = r.skill_version_id
         WHERE r.run_id = ?
         """,
         (run_id,),
@@ -1073,6 +1208,9 @@ def record_observation(
     if not run:
         raise FeedbackStoreError(f"Run does not exist: {run_id}")
     spec = validate_observation_spec(observation)
+    _validate_observation_for_source(spec, str(run["source_kind"]))
+    if spec["target_kind"] == "repository" and run["context_hash"] is None:
+        raise FeedbackStoreError("Repository-targeted observations require run context_path")
     if _should_skip_task_specific(spec):
         return {"ok": True, "runId": run_id, "skippedTaskSpecific": True, "observationId": None}
     if spec["target_kind"] == "skill" and not spec.get("target_skill_path"):
@@ -1102,8 +1240,8 @@ def record_observation(
                     primary_skill_version_id, category, evidence_type,
                     summary, workaround_summary, severity, reusability,
                     confidence_tier, suggestion_kind, state, candidate_name,
-                    positive_evidence, summary_fingerprint, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'observed', ?, ?, ?, ?)
+                    target_component, positive_evidence, summary_fingerprint, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'observed', ?, ?, ?, ?, ?)
                 """,
                 (
                     observation_id,
@@ -1119,6 +1257,7 @@ def record_observation(
                     spec["confidence_tier"],
                     spec["suggestion_kind"],
                     spec["candidate_name"],
+                    spec["target_component"],
                     int(spec["positive"]),
                     fingerprint,
                     created_at,
@@ -1324,12 +1463,19 @@ def cluster_observations(
             "UPDATE candidate_clusters SET updated_at = ? WHERE cluster_id = ?",
             (created_at, cluster_id),
         )
-        return candidate_cluster_summary(conn, cluster_id)
+        return candidate_cluster_summary(conn, cluster_id, source_kind=None)
 
     return _write_with_retry(connection, write)
 
 
-def candidate_cluster_summary(connection: sqlite3.Connection, cluster_id: str) -> dict[str, Any]:
+def candidate_cluster_summary(
+    connection: sqlite3.Connection,
+    cluster_id: str,
+    *,
+    source_kind: str | None = "skill",
+    target_kind: str | None = None,
+    target_component: str | None = None,
+) -> dict[str, Any]:
     row = connection.execute(
         """
         SELECT cluster_id, problem_key, kind, canonical_problem, working_name, state,
@@ -1340,8 +1486,23 @@ def candidate_cluster_summary(connection: sqlite3.Connection, cluster_id: str) -
     ).fetchone()
     if not row:
         raise FeedbackStoreError(f"Cluster does not exist: {cluster_id}")
+    clauses = ["co.cluster_id = ?"]
+    params: list[Any] = [cluster_id]
+    if source_kind is not None:
+        if source_kind not in SOURCE_KINDS:
+            raise FeedbackStoreError(f"Invalid source_kind filter: {source_kind}")
+        clauses.append("r.source_kind = ?")
+        params.append(source_kind)
+    if target_kind is not None:
+        if target_kind not in TARGET_KINDS:
+            raise FeedbackStoreError(f"Invalid target_kind filter: {target_kind}")
+        clauses.append("o.primary_target_kind = ?")
+        params.append(target_kind)
+    if target_component is not None:
+        clauses.append("o.target_component = ?")
+        params.append(_safe_slug(target_component, "target_component"))
     counts = connection.execute(
-        """
+        f"""
         SELECT
             COUNT(DISTINCT o.observation_id) AS observation_count,
             COUNT(DISTINCT o.run_id) AS independent_run_count,
@@ -1353,9 +1514,9 @@ def candidate_cluster_summary(connection: sqlite3.Connection, cluster_id: str) -
         FROM cluster_observations co
         JOIN observations o ON o.observation_id = co.observation_id
         JOIN skill_runs r ON r.run_id = o.run_id
-        WHERE co.cluster_id = ?
+        WHERE {' AND '.join(clauses)}
         """,
-        (cluster_id,),
+        params,
     ).fetchone()
     aliases = [
         str(item[0])
@@ -1389,20 +1550,74 @@ def candidate_cluster_summary(connection: sqlite3.Connection, cluster_id: str) -
     }
 
 
-def list_clusters(connection: sqlite3.Connection, *, limit: int = 100) -> list[dict[str, Any]]:
+def list_clusters(
+    connection: sqlite3.Connection,
+    *,
+    limit: int = 100,
+    source_kind: str | None = "skill",
+    target_kind: str | None = None,
+    target_component: str | None = None,
+) -> list[dict[str, Any]]:
+    filters: list[str] = []
+    params: list[Any] = []
+    if source_kind is not None:
+        if source_kind not in SOURCE_KINDS:
+            raise FeedbackStoreError(f"Invalid source_kind filter: {source_kind}")
+        filters.append("r.source_kind = ?")
+        params.append(source_kind)
+    if target_kind is not None:
+        if target_kind not in TARGET_KINDS:
+            raise FeedbackStoreError(f"Invalid target_kind filter: {target_kind}")
+        filters.append("o.primary_target_kind = ?")
+        params.append(target_kind)
+    if target_component is not None:
+        filters.append("o.target_component = ?")
+        params.append(_safe_slug(target_component, "target_component"))
+    where = ""
+    if filters:
+        where = f"""
+        WHERE EXISTS (
+            SELECT 1
+            FROM cluster_observations co
+            JOIN observations o ON o.observation_id = co.observation_id
+            JOIN skill_runs r ON r.run_id = o.run_id
+            WHERE co.cluster_id = c.cluster_id AND {' AND '.join(filters)}
+        )
+        """
+    params.append(max(1, min(limit, 1_000)))
     ids = [
         str(row[0])
         for row in connection.execute(
-            "SELECT cluster_id FROM candidate_clusters ORDER BY updated_at DESC LIMIT ?", (limit,)
+            f"""
+            SELECT c.cluster_id
+            FROM candidate_clusters c
+            {where}
+            ORDER BY c.updated_at DESC
+            LIMIT ?
+            """,
+            params,
         ).fetchall()
     ]
-    return [candidate_cluster_summary(connection, cluster_id) for cluster_id in ids]
+    summaries = [
+        candidate_cluster_summary(
+            connection,
+            cluster_id,
+            source_kind=source_kind,
+            target_kind=target_kind,
+            target_component=target_component,
+        )
+        for cluster_id in ids
+    ]
+    return [summary for summary in summaries if summary["observationCount"] > 0]
 
 
 def query_observations(
     connection: sqlite3.Connection,
     *,
     skill_name: str | None = None,
+    source_kind: str | None = "skill",
+    target_kind: str | None = None,
+    target_component: str | None = None,
     state: str | None = None,
     category: str | None = None,
     suggestion_kind: str | None = None,
@@ -1411,6 +1626,19 @@ def query_observations(
 ) -> list[dict[str, Any]]:
     clauses: list[str] = []
     params: list[Any] = []
+    if source_kind is not None:
+        if source_kind not in SOURCE_KINDS:
+            raise FeedbackStoreError(f"Invalid source_kind filter: {source_kind}")
+        clauses.append("r.source_kind = ?")
+        params.append(source_kind)
+    if target_kind:
+        if target_kind not in TARGET_KINDS:
+            raise FeedbackStoreError(f"Invalid target_kind filter: {target_kind}")
+        clauses.append("o.primary_target_kind = ?")
+        params.append(target_kind)
+    if target_component:
+        clauses.append("o.target_component = ?")
+        params.append(_safe_slug(target_component, "target_component"))
     if skill_name:
         clauses.append("tv.skill_name = ?")
         params.append(skill_name)
@@ -1432,15 +1660,16 @@ def query_observations(
     params.append(max(1, min(limit, 1_000)))
     rows = connection.execute(
         f"""
-        SELECT o.observation_id, o.run_id, o.primary_target_kind, tv.skill_name AS target_skill,
+            SELECT o.observation_id, o.run_id, r.source_kind, o.primary_target_kind,
+                   o.target_component, tv.skill_name AS target_skill,
                o.category, o.evidence_type, o.summary, o.workaround_summary,
                o.severity, o.reusability, o.confidence_tier, o.suggestion_kind,
                o.state, o.candidate_name, o.positive_evidence, o.created_at,
                rv.skill_name AS observer_skill, rv.repo_commit, rv.content_hash,
-               rv.bundle_hash, rv.dirty, r.context_hash
-        FROM observations o
-        JOIN skill_runs r ON r.run_id = o.run_id
-        JOIN skill_versions rv ON rv.version_id = r.skill_version_id
+                   rv.bundle_hash, rv.dirty, r.context_hash
+            FROM observations o
+            JOIN skill_runs r ON r.run_id = o.run_id
+            LEFT JOIN skill_versions rv ON rv.version_id = r.skill_version_id
         LEFT JOIN skill_versions tv ON tv.version_id = o.primary_skill_version_id
         {where}
         ORDER BY o.created_at DESC
@@ -1885,8 +2114,20 @@ def health_report(connection: sqlite3.Connection, path: Path) -> dict[str, Any]:
     integrity = [str(row[0]) for row in integrity_rows]
     schema = int(connection.execute("SELECT version FROM schema_metadata WHERE singleton = 1").fetchone()[0])
     journal = str(connection.execute("PRAGMA journal_mode").fetchone()[0])
+    total_runs = int(connection.execute("SELECT COUNT(*) FROM skill_runs").fetchone()[0])
+    skill_runs = total_runs
+    agent_runs = 0
+    if schema >= 4:
+        skill_runs = int(
+            connection.execute("SELECT COUNT(*) FROM skill_runs WHERE source_kind = 'skill'").fetchone()[0]
+        )
+        agent_runs = int(
+            connection.execute("SELECT COUNT(*) FROM skill_runs WHERE source_kind = 'agent'").fetchone()[0]
+        )
     counts = {
-        "runs": int(connection.execute("SELECT COUNT(*) FROM skill_runs").fetchone()[0]),
+        "runs": total_runs,
+        "skillRuns": skill_runs,
+        "agentRuns": agent_runs,
         "observations": int(connection.execute("SELECT COUNT(*) FROM observations").fetchone()[0]),
         "clusters": int(connection.execute("SELECT COUNT(*) FROM candidate_clusters").fetchone()[0]),
         "evaluations": int(connection.execute("SELECT COUNT(*) FROM evaluations").fetchone()[0]),
@@ -1980,8 +2221,9 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("health", help="Run integrity and durability checks")
     subparsers.add_parser("plugin-eval-status", help="Detect the preferred evaluation backend")
 
-    record_run_parser = subparsers.add_parser("record-run", help="Record one completed skill run")
-    record_run_parser.add_argument("--skill-path", required=True)
+    record_run_parser = subparsers.add_parser("record-run", help="Record one completed skill or agent run")
+    record_run_parser.add_argument("--skill-path")
+    record_run_parser.add_argument("--source-kind", choices=sorted(SOURCE_KINDS))
     record_run_parser.add_argument("--invocation-mode", choices=sorted(INVOCATION_MODES), default="unknown")
     record_run_parser.add_argument("--outcome", choices=sorted(OUTCOMES), default="unknown")
     record_run_parser.add_argument("--started-at")
@@ -1997,6 +2239,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     query_parser = subparsers.add_parser("query", help="Query a targeted slice of observations")
     query_parser.add_argument("--skill")
+    query_parser.add_argument("--source-kind", choices=[*sorted(SOURCE_KINDS), "all"], default="skill")
+    query_parser.add_argument("--target-kind", choices=sorted(TARGET_KINDS))
+    query_parser.add_argument("--target-component")
     query_parser.add_argument("--state")
     query_parser.add_argument("--category")
     query_parser.add_argument("--suggestion-kind")
@@ -2024,6 +2269,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     clusters_parser = subparsers.add_parser("clusters", help="List clustered candidates")
+    clusters_parser.add_argument("--source-kind", choices=[*sorted(SOURCE_KINDS), "all"], default="skill")
+    clusters_parser.add_argument("--target-kind", choices=sorted(TARGET_KINDS))
+    clusters_parser.add_argument("--target-component")
     clusters_parser.add_argument("--limit", type=int, default=100)
 
     eval_begin = subparsers.add_parser("evaluation-begin", help="Freeze criteria before changing a skill")
@@ -2080,6 +2328,7 @@ def _execute_command(args: argparse.Namespace, connection: sqlite3.Connection, p
         return record_run(
             connection,
             skill_path=args.skill_path,
+            source_kind=args.source_kind,
             invocation_mode=args.invocation_mode,
             outcome=args.outcome,
             started_at=args.started_at,
@@ -2097,6 +2346,9 @@ def _execute_command(args: argparse.Namespace, connection: sqlite3.Connection, p
         return query_observations(
             connection,
             skill_name=args.skill,
+            source_kind=None if args.source_kind == "all" else args.source_kind,
+            target_kind=args.target_kind,
+            target_component=args.target_component,
             state=args.state,
             category=args.category,
             suggestion_kind=args.suggestion_kind,
@@ -2124,7 +2376,13 @@ def _execute_command(args: argparse.Namespace, connection: sqlite3.Connection, p
             relationship=args.relationship,
         )
     if args.command == "clusters":
-        return list_clusters(connection, limit=args.limit)
+        return list_clusters(
+            connection,
+            limit=args.limit,
+            source_kind=None if args.source_kind == "all" else args.source_kind,
+            target_kind=args.target_kind,
+            target_component=args.target_component,
+        )
     if args.command == "evaluation-begin":
         return begin_evaluation(
             connection,
