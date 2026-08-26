@@ -43,7 +43,7 @@ If you already keep other skills in that directory, clone this repository somewh
 - OpenAI Codex with skills support.
 - Git for cloning and updating the repository.
 - GitHub CLI (`gh`) and GitHub authentication for skills that operate on GitHub issues, branches, or pull requests.
-- Python 3 for the local `improve-skills` evidence-store helper.
+- Python 3.10 or newer for the local `improve-skills` evidence-store helper. Its shared launcher discovers bundled and standard installations.
 
 ## Usage
 

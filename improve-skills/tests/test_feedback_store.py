@@ -5,9 +5,12 @@ from contextlib import redirect_stdout
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
+import shutil
 import sqlite3
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -17,6 +20,17 @@ from unittest import mock
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = SKILL_ROOT.parent
 MODULE_PATH = SKILL_ROOT / "scripts" / "feedback_store.py"
+POWERSHELL_LAUNCHER = SKILL_ROOT / "scripts" / "run_feedback_store.ps1"
+POSIX_LAUNCHER = SKILL_ROOT / "scripts" / "run_feedback_store.sh"
+POSIX_SHELL = shutil.which("sh")
+if POSIX_SHELL is None and os.name == "nt":
+    for shell_path in (
+        Path("C:/Program Files/Git/bin/sh.exe"),
+        Path("C:/Program Files/Git/usr/bin/sh.exe"),
+    ):
+        if shell_path.is_file():
+            POSIX_SHELL = str(shell_path)
+            break
 SPEC = importlib.util.spec_from_file_location("improve_skills_feedback_store", MODULE_PATH)
 assert SPEC and SPEC.loader
 store = importlib.util.module_from_spec(SPEC)
@@ -1144,6 +1158,131 @@ class FailureIsolationAndContractTests(StoreCase):
             self.assertIn(issue, provenance)
         self.assertIn("Keep the active baseline/after comparison", evaluation)
         self.assertIn("Never recursively clean a broad or computed path", evaluation)
+
+
+class PortableLauncherTests(unittest.TestCase):
+    def launcher_environment(self) -> dict[str, str]:
+        environment = os.environ.copy()
+        environment["CODEX_SKILL_PYTHON"] = sys.executable
+        return environment
+
+    @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "PowerShell launcher test")
+    def test_powershell_launcher_selects_override_and_forwards_arguments(self) -> None:
+        completed = subprocess.run(
+            [
+                shutil.which("pwsh") or "pwsh",
+                "-NoProfile",
+                "-File",
+                str(POWERSHELL_LAUNCHER),
+                "--help",
+            ],
+            check=False,
+            capture_output=True,
+            env=self.launcher_environment(),
+            text=True,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        self.assertIn("usage: feedback_store.py", completed.stdout)
+
+        invalid = subprocess.run(
+            [
+                shutil.which("pwsh") or "pwsh",
+                "-NoProfile",
+                "-File",
+                str(POWERSHELL_LAUNCHER),
+                "not-a-command",
+            ],
+            check=False,
+            capture_output=True,
+            env=self.launcher_environment(),
+            text=True,
+        )
+        self.assertEqual(2, invalid.returncode)
+
+    @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "PowerShell launcher test")
+    def test_powershell_launcher_reports_missing_interpreter(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            environment = os.environ.copy()
+            environment.pop("CODEX_SKILL_PYTHON", None)
+            environment["PATH"] = str(Path(temporary) / "empty-path")
+            environment["USERPROFILE"] = temporary
+            completed = subprocess.run(
+                [
+                    shutil.which("pwsh") or "pwsh",
+                    "-NoProfile",
+                    "-File",
+                    str(POWERSHELL_LAUNCHER),
+                    "--help",
+                ],
+                check=False,
+                capture_output=True,
+                env=environment,
+                text=True,
+            )
+
+        self.assertEqual(127, completed.returncode)
+        self.assertIn("no supported Python 3 interpreter found", completed.stderr)
+
+    @unittest.skipUnless(POSIX_SHELL, "POSIX launcher test")
+    def test_posix_launcher_selects_override_and_forwards_arguments(self) -> None:
+        completed = subprocess.run(
+            [POSIX_SHELL or "sh", str(POSIX_LAUNCHER).replace("\\", "/"), "--help"],
+            check=False,
+            capture_output=True,
+            env=self.launcher_environment(),
+            text=True,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        self.assertIn("usage: feedback_store.py", completed.stdout)
+
+        invalid = subprocess.run(
+            [
+                POSIX_SHELL or "sh",
+                str(POSIX_LAUNCHER).replace("\\", "/"),
+                "not-a-command",
+            ],
+            check=False,
+            capture_output=True,
+            env=self.launcher_environment(),
+            text=True,
+        )
+        self.assertEqual(2, invalid.returncode)
+
+    @unittest.skipUnless(POSIX_SHELL, "POSIX launcher test")
+    def test_posix_launcher_reports_missing_interpreter(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            environment = os.environ.copy()
+            environment.pop("CODEX_SKILL_PYTHON", None)
+            environment["HOME"] = temporary
+            environment["PATH"] = str(Path(temporary) / "empty-path")
+            completed = subprocess.run(
+                [
+                    POSIX_SHELL or "sh",
+                    str(POSIX_LAUNCHER).replace("\\", "/"),
+                    "--help",
+                ],
+                check=False,
+                capture_output=True,
+                env=environment,
+                text=True,
+            )
+
+        self.assertEqual(127, completed.returncode)
+        self.assertIn("no supported Python 3 interpreter found", completed.stderr)
+
+    def test_participating_skills_route_through_portable_launchers(self) -> None:
+        participating_skills = [
+            SKILL_ROOT / "SKILL.md",
+            REPOSITORY_ROOT / "plan-parallel-work" / "SKILL.md",
+            REPOSITORY_ROOT / "process-issues" / "SKILL.md",
+            REPOSITORY_ROOT / "sync-after-merge" / "SKILL.md",
+        ]
+        for skill_path in participating_skills:
+            skill_text = skill_path.read_text(encoding="utf-8")
+            with self.subTest(skill=skill_path.parent.name):
+                self.assertIn("run_feedback_store.ps1", skill_text)
+                self.assertIn("run_feedback_store.sh", skill_text)
+                self.assertNotIn("feedback_store.py record-run", skill_text)
 
 
 if __name__ == "__main__":
