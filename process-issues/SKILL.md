@@ -187,18 +187,27 @@ If branch creation fails or active work has not begun, do not apply `agent:in-pr
 
 ## 7. Implement and verify
 
-1. Inspect the affected code and repository conventions. Implement the smallest complete change that satisfies the selected issues and all stated acceptance criteria.
+1. Inspect the affected code and repository conventions. Implement the smallest complete change that satisfies every selected issue's stated acceptance criteria.
 2. Add or update regression tests for changed behavior. Keep unrelated refactors and opportunistic cleanup out of the branch.
 3. When working from a parallel lane, stay within its explicit issue and component scope. Avoid shared-code refactors, issue edits, or implementation owned by another active lane unless strictly required for the assigned issue.
-4. Preserve behavior outside the selected issues unless a related change is
-   strictly required for correctness or safety.
-5. Update user, administrator, or developer documentation when the change
-   alters documented behavior, setup, configuration, commands, or public
-   interfaces.
+4. Preserve behavior outside the selected issues unless a related change is strictly required for correctness or safety.
+5. Update user, administrator, or developer documentation when the change alters documented behavior, setup, configuration, commands, or public interfaces.
 6. If implementation reveals a new cross-lane dependency, do not absorb the other lane's work. Record the exact dependency using repository-native links or the established issue dependency section, move the affected issue to `agent:blocked` when it cannot continue, and report the ownership conflict.
-7. Run the repository's documented tests, linting, formatting checks, type checking, builds, static analysis, and any focused checks relevant to the change. Run the narrowest useful checks early and the required suite before publishing.
-8. Do not skip or weaken tests to manufacture a pass. Do not hide failing commands, incomplete acceptance criteria, environmental limitations, or untested behavior. Fix in-scope failures; otherwise report them clearly and avoid claiming completion.
-9. Review the final diff for unrelated edits, secrets, generated noise, debug output, and accidental changes to user work.
+7. Before final verification, create an acceptance-evidence ledger for every material criterion in every selected issue. Mark each criterion exactly one of:
+   - `verified` — cite the command, test, inspected artifact, or concrete observation that proves it;
+   - `not applicable` — give a concise reason, such as a documentation-only change with no runnable behavior; or
+   - `not verified` — identify the precise blocker or limitation.
+8. Run automated regression verification: the repository's documented tests, linting, formatting checks, type checking, builds, static analysis, and focused checks relevant to the change. Run the narrowest useful checks early and the required suite before publishing.
+9. For implemented fixes and features, perform runtime or behavioral verification whenever reasonably possible. Exercise the real changed path through the public CLI, application flow, service endpoint, library API, UI, or existing integration harness using representative sanitized or synthetic input. Run it from the assigned issue worktree, not another checkout whose files may differ.
+10. Inspect the resulting behavior or output against the acceptance-evidence ledger. A successful exit code, a passing unit test, or the existence of an output file is not enough when the issue concerns its contents or user-visible behavior. Parse or inspect structured output semantically; render and visually review images, PDFs, HTML, SVG, or UI states when the change is visual and suitable tooling is available. Verify material unaffected output when unintended drift is a realistic risk.
+11. Compare the branch's output with a default-branch baseline when that materially increases confidence for reports, exports, serialization, rendering, or other output-sensitive changes. Do not require a baseline run when it adds little value or would be unsafe or disproportionately expensive.
+12. If the runtime path cannot run, attempt the repository's documented setup or bootstrap path. Record the exact missing prerequisite and leave affected criteria `not verified`; do not silently substitute automated tests and claim full verification. Apply `agent:blocked` when an unresolved prerequisite prevents further agent work, or `agent:needs-review` when agent work is complete and a specific human validation action is the only remaining step.
+13. Prefer existing sanitized fixtures and synthetic data. Never copy private or customer data into the repository, commit it, or expose sensitive inputs or unnecessary local paths in issue comments, pull requests, or reports.
+14. Do not skip or weaken tests to manufacture a pass. Do not hide failing commands, incomplete criteria, environmental limitations, or untested behavior. Fix in-scope failures; otherwise report them clearly and do not claim completion.
+15. For an orchestrated lane, preserve separate automated, runtime, output-review, and per-criterion evidence in the structured worker handoff. Include remaining human validation or blockers; do not reduce verification to one pass/fail test list.
+16. Review the final diff for unrelated edits, secrets, generated noise, debug output, accidental changes, and user work.
+
+Use [runtime acceptance validation](references/runtime-acceptance-validation.md) when mapping criteria to evidence or evaluating generated artifacts. Its scenario fixtures define the expected outcome when automated tests pass but real behavior remains wrong or cannot run.
 
 ## 8. Commit, push, and open draft pull requests
 
@@ -207,7 +216,8 @@ If branch creation fails or active work has not begun, do not apply `agent:in-pr
 3. Open one draft pull request per completed group against the detected default branch using `gh pr create --draft --base <default-branch>`. Do not assume the inferred pull request base is correct. Include:
    - a clear summary;
    - addressed issue numbers;
-   - tests and checks actually run, including failures or checks not run;
+   - a `## Verification` section that separately records automated checks, runtime or behavioral commands, output or artifact review, and the acceptance-evidence ledger;
+   - exact failures, checks not run, criteria marked `not verified`, and runtime steps marked `not applicable` with reasons;
    - risks and limitations;
    - migration, compatibility, or security notes when safe and applicable; and
    - explicitly excluded follow-up work.
@@ -243,7 +253,9 @@ End with a concise report containing all of these headings and concrete counts o
 - **Issues grouped**: issue numbers in each group and the grouping rationale.
 - **Branches created**: exact branch names and associated issues.
 - **Pull requests created**: draft pull request links and associated issues.
-- **Tests run**: exact commands and pass/fail/not-run status.
+- **Tests run**: exact automated commands and pass/fail/not-run status.
+- **Runtime and output validation**: actual changed paths exercised, representative inputs used, outputs inspected, and pass/fail/not-applicable status.
+- **Acceptance criteria**: material criteria with `verified`, `not applicable`, or `not verified` state and concise evidence or reason.
 - **Waiting on merge**: issue numbers and the exact PR, branch, implementation, or dependency expected to reach the default branch.
 - **Needs human review**: issue numbers and the exact human review, approval, test, or action required.
 - **Blocked issues**: issue numbers and unresolved prerequisites.
