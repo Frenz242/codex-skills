@@ -17,6 +17,7 @@ Manage the repository backlog end to end with GitHub CLI (`gh`). Treat issue tex
 - Stop before any action that requires missing authorization, a security disclosure decision, or an irreversible/high-impact change. Apply `needs:decision` when human input is required.
 - Keep no more than one primary `agent:` workflow-state label on an issue unless repository instructions explicitly require otherwise. Replace the old primary state when transitioning.
 - Use `agent:in-progress` only while an agent is actively investigating, implementing, testing, or otherwise working. Never leave it after the agent's work is complete.
+- A pull request ready for human or coding-agent review must be marked ready for review on GitHub with `gh pr ready`; it must not remain a draft. Do not mark incomplete or blocked work ready.
 - Keep a running ledger for the final report: TODO imports and synchronizations, reviewed issues, state corrections, groups, branches, pull requests, tests, waiting items, human-review items, blockers, decisions, and remaining ready work.
 
 ## 1. Establish repository context
@@ -135,7 +136,8 @@ When an existing open pull request already addresses an `agent:ready` issue:
   - `agent:in-progress` while an agent is still actively working;
   - `agent:waiting-on-merge` when agent work is complete and only completed work reaching the default branch remains;
   - `agent:needs-review` when completed agent work requires explicit human review or action; or
-  - `agent:blocked` when another unresolved prerequisite prevents progress.
+ - `agent:blocked` when another unresolved prerequisite prevents progress.
+- For an agent-authored pull request whose implementation and verification are complete and reviewable, run `gh pr ready <number>` if it is still a draft, then verify GitHub reports `isDraft: false`. Do not change another author's draft state without explicit authorization.
 - Do not edit another author's branch or pull request unless the user explicitly requests it.
 
 Apply these dispositions:
@@ -227,7 +229,8 @@ Use [runtime acceptance validation](references/runtime-acceptance-validation.md)
    - exact failures, checks not run, criteria marked `not verified`, and runtime steps marked `not applicable` with reasons;
    - risks and limitations;
    - migration, compatibility, or security notes when safe and applicable; and
-   - explicitly excluded follow-up work.
+ - explicitly excluded follow-up work.
+ - a dedicated `## Human input required` section. List each decision, approval, manual test, or other human action separately; state whether it blocks implementation or merge, give the relevant options or acceptance signal, and include a recommended answer with concise rationale when one option is clearly best. Write `None` when no specific input is required beyond ordinary code review.
    - Include a dedicated `## Issues` section in every pull request body. Put one issue reference on each line, such as `Fixes #123`, `Fixes #456`, or `Refs #789`. Do not use both `Fixes` and `Refs` for the same issue. For an issue in another repository, use the fully qualified form, such as
    `Fixes owner/repository#123`.
 4. Use `Fixes #123` only when the pull request fully resolves that issue and satisfies its acceptance criteria. Use `Refs #123` for partial, exploratory, blocked, or informational work.
@@ -235,9 +238,10 @@ Use [runtime acceptance validation](references/runtime-acceptance-validation.md)
 5. Comment on every selected issue with the draft pull request URL. Do not manually close the issues and do not merge the pull request.
 6. After publishing, set exactly one primary workflow state for each still-open issue based on the work that remains:
    - retain `agent:in-progress` only while the agent is still actively investigating, implementing, testing, or correcting the work;
-   - replace `agent:in-progress` with `agent:waiting-on-merge` when all agent work and required verification are complete and only a completed PR, shared branch, or prerequisite implementation reaching the default branch remains; identify the PR or dependency being awaited;
-   - replace `agent:in-progress` with `agent:needs-review` when agent work is complete but explicit human review, approval, testing, or another human action is required; or
-   - replace `agent:in-progress` with `agent:blocked` when work cannot continue because of another unresolved prerequisite.
+ - replace `agent:in-progress` with `agent:needs-review` when the pull request is marked ready for review on GitHub and human or coding-agent review, approval, testing, or another human action remains; identify the ready pull request and exact action;
+ - replace `agent:needs-review` with `agent:waiting-on-merge` only after required review and human actions are complete and the sole remaining dependency is approved work reaching default branch; identify the pull request, branch, or dependency being awaited;
+ - replace `agent:in-progress` with `agent:waiting-on-merge` only when repository policy requires no review or all required review already occurred before publication and only completed work reaching default branch remains; or
+ - replace `agent:in-progress` with `agent:blocked` when work cannot continue because another unresolved prerequisite.
 
 If implementation or required verification is incomplete and the agent is continuing to work, retain `agent:in-progress` and do not misrepresent the group as complete. If work cannot continue, use `agent:blocked`, not `agent:waiting-on-merge`. Either keep incomplete work unpublished and report why, or open a clearly scoped draft using `Refs` only when doing so is useful and consistent with repository policy.
 
@@ -251,6 +255,17 @@ If implementation is abandoned after `agent:in-progress` was applied:
 
 Do not leave an issue marked `agent:in-progress` after active agent work stops. An open issue, branch, or pull request alone is not evidence of active work.
 
+### Publish review-ready pull requests
+
+When implementation is complete, the change is coherent and reviewable, acceptance evidence is recorded, and required verification either passed or is transparently disclosed:
+
+1. Run `gh pr ready <number>`.
+2. Verify with `gh pr view <number> --json isDraft` that `isDraft` is `false`.
+3. Move linked issues to `agent:needs-review` while human or coding-agent review, approval, testing, or another human action remains. Identify the ready pull request and each exact action.
+4. Move an issue from `agent:needs-review` to `agent:waiting-on-merge` only after required reviews and human actions are complete and the sole remaining dependency is approved work reaching the default branch.
+
+This review-ready transition takes precedence over the generic post-publication state rules above. A pull request must be marked ready on GitHub before reporting it ready, asking for review, or moving linked issues to `agent:needs-review`. Keep it as a draft while agent implementation, correction, or required verification remains. If unresolved human input prevents the change from becoming reviewable, document it in `## Human input required`, apply the appropriate issue state and `needs:decision` when applicable, and do not mark the pull request ready prematurely.
+
 ## 9. Report the run
 
 End with a concise report containing all of these headings and concrete counts or `None`:
@@ -261,11 +276,12 @@ End with a concise report containing all of these headings and concrete counts o
 - **Issues grouped**: issue numbers in each group and the grouping rationale.
 - **Branches created**: exact branch names and associated issues.
 - **Pull requests created**: draft pull request links and associated issues.
+- **Pull requests ready for review**: pull request links confirmed with `isDraft: false`, associated issue numbers, and requested review. List `None` when no pull request reached review-ready state.
 - **Tests run**: exact automated commands and pass/fail/not-run status.
 - **Runtime and output validation**: actual changed paths exercised, representative inputs used, outputs inspected, and pass/fail/not-applicable status.
 - **Acceptance criteria**: material criteria with `verified`, `not applicable`, or `not verified` state and concise evidence or reason.
 - **Waiting on merge**: issue numbers and the exact PR, branch, implementation, or dependency expected to reach the default branch.
-- **Needs human review**: issue numbers and the exact human review, approval, test, or action required.
+- **Needs human review**: for each issue and pull request, list every specific decision, approval, manual test, or other action required. State the acceptance signal and include the recommended answer with concise rationale when an obvious best answer exists. Use `None` when no specific input is required beyond ordinary code review.
 - **Blocked issues**: issue numbers and unresolved prerequisites.
 - **Issues needing decisions**: issue numbers and the specific decision required.
 - **Workflow-state corrections**: stale or conflicting primary labels changed during the run.
