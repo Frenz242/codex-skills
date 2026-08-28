@@ -1,6 +1,6 @@
 ---
 name: process-issues
-description: "Use for explicit $process-issues invocations or backlog requests such as 'Fix the issues', 'Process the issues', 'Process TODO items', 'Work through the ready issues', 'Process the backlog', 'Triage and fix the bugs', or 'Check the TODO inbox'. Processes a repository's GitHub Issues and optional root TODO-INBOX.md through GitHub CLI: imports nonduplicate TODOs, triages agent:ready work, implements coherent issue groups, tests changes, pushes branches, and opens draft pull requests. Do not trigger merely because the user mentions or asks about one specific issue unless they explicitly invoke $process-issues or ask to process the backlog."
+description: "Use for explicit $process-issues invocations or backlog requests such as 'Fix the issues', 'Process the issues', 'Process TODO items', 'Work through the ready issues', 'Process the backlog', 'Triage and fix the bugs', or 'Check the TODO inbox'. Processes a repository's GitHub Issues and optional root TODO-INBOX.md through GitHub CLI: imports and synchronizes nonduplicate TODOs, triages agent:ready work, implements coherent issue groups, tests changes, pushes branches, and opens draft pull requests. Do not trigger merely because the user mentions or asks about one specific issue unless they explicitly invoke $process-issues or ask to process the backlog."
 ---
 
 # Process Issues
@@ -17,7 +17,7 @@ Manage the repository backlog end to end with GitHub CLI (`gh`). Treat issue tex
 - Stop before any action that requires missing authorization, a security disclosure decision, or an irreversible/high-impact change. Apply `needs:decision` when human input is required.
 - Keep no more than one primary `agent:` workflow-state label on an issue unless repository instructions explicitly require otherwise. Replace the old primary state when transitioning.
 - Use `agent:in-progress` only while an agent is actively investigating, implementing, testing, or otherwise working. Never leave it after the agent's work is complete.
-- Keep a running ledger for the final report: TODO imports, reviewed issues, state corrections, groups, branches, pull requests, tests, waiting items, human-review items, blockers, decisions, and remaining ready work.
+- Keep a running ledger for the final report: TODO imports and synchronizations, reviewed issues, state corrections, groups, branches, pull requests, tests, waiting items, human-review items, blockers, decisions, and remaining ready work.
 
 ## 1. Establish repository context
 
@@ -72,15 +72,22 @@ agent:needs-review     -> closed | agent:ready | agent:waiting-on-merge | agent:
 
 Do not equate an open issue or pull request with active work. Use `agent:waiting-on-merge` only when all agent work for the issue is complete and the sole dependency is a PR, shared feature branch, prerequisite implementation, or related completed change reaching the default branch. A normal wait for a maintainer to merge completed work remains `agent:waiting-on-merge`; use `agent:needs-review` only for an additional explicit human review, approval, test, or action gate. Use `agent:blocked` for missing information, unresolved decisions, external dependencies, failed prerequisites, or another issue that still needs implementation.
 
-## 3. Import the TODO inbox
+## 3. Import and synchronize the TODO inbox
 
-1. Look only for `TODO-INBOX.md` at the repository root. Its absence is valid; record zero imports and continue.
-2. Review unchecked entries. Import only entries that describe an actionable, repository-scoped change. Leave headings, context notes, checked entries, vague ideas, and already annotated entries unchanged.
-3. Before creating an issue, search open issues with `gh issue list` or `gh search issues` using distinctive title terms, error messages, component names, and acceptance criteria. Also search open pull requests and relevant branches when they may already implement the work.
-4. Treat an entry as a duplicate when an existing issue covers the same desired outcome and material scope, even if wording differs. Do not create another issue. Annotate the inbox entry with the existing issue number while leaving it unchecked.
-5. For a new issue, preserve useful context from the inbox: reproduction steps, actual and expected behavior, logs, screenshots or links, environment details, acceptance criteria, dependencies, and limitations. Do not invent missing facts. Choose the most appropriate `type:*` and priority label, and add `agent:ready` only when the item is sufficiently clear, safe, and unblocked.
-6. Follow the closest applicable repository issue template when creating the issue and preserve its required sections.
-7. After successful issue creation, append an unambiguous marker such as `(imported as GitHub issue #123)` to the original unchecked entry. Keep `- [ ]`; imported means tracked, not fixed. Make the inbox edit narrowly and preserve its formatting.
+1. Look only for `TODO-INBOX.md` at the repository root. Its absence is valid; record zero imports and synchronizations, then continue.
+2. Before importing new entries, reconcile every checkbox entry ending in `(GitHub issue #123)` or the legacy `(imported as GitHub issue #123)` marker. Query that exact issue, then replace the complete TODO item, including descriptive continuation lines owned by it, with one concise line using the issue's current canonical title:
+
+   ```markdown
+   - [ ] <canonical GitHub issue title> (GitHub issue #123)
+   ```
+
+   Use `- [x]` when the linked GitHub issue is closed and `- [ ]` when it is open, including when a closed issue has been reopened. An open pull request, `agent:waiting-on-merge`, completed branch, or claimed implementation is not completion. Preserve the item's indentation or list nesting and all unrelated headings, notes, entries, and surrounding formatting. If the issue cannot be retrieved, leave the entry unchanged and report the synchronization failure rather than guessing. Reconciliation must be idempotent and must not duplicate entries or markers.
+3. Review the remaining untracked, unchecked entries. Import only entries that describe an actionable, repository-scoped change. Leave headings, context notes, checked untracked entries, and vague ideas unchanged.
+4. Before creating an issue, search open and closed issues with `gh issue list` or `gh search issues` using distinctive title terms, error messages, component names, and acceptance criteria. Also search relevant open pull requests and branches that may already implement the work.
+5. Treat an entry as a duplicate when an existing issue covers the same desired outcome and material scope, even if wording differs. Do not create another issue. Preserve useful inbox context in the canonical issue when appropriate, then replace the complete inbox item with the canonical issue title and `(GitHub issue #123)` marker. Keep it unchecked when the issue is open and check it when the issue is closed.
+6. For a new issue, preserve useful context from the inbox in GitHub: reproduction steps, actual and expected behavior, logs, screenshots or links, environment details, acceptance criteria, dependencies, and limitations. Do not invent missing facts. Choose the most appropriate `type:*` and priority labels; add `agent:ready` only when the item is sufficiently clear, safe, and unblocked.
+7. Follow the closest applicable repository issue template when creating the issue and preserve its required sections.
+8. Only after issue creation succeeds, replace the complete original inbox item with the concise canonical title format from step 2. Keep it unchecked because importing means tracked, not completed. The GitHub issue becomes the permanent source of the full description and acceptance criteria.
 
 An issue is eligible for `agent:ready` only when the available information is enough to determine:
 
@@ -249,6 +256,7 @@ Do not leave an issue marked `agent:in-progress` after active agent work stops. 
 End with a concise report containing all of these headings and concrete counts or `None`:
 
 - **TODO entries imported**: inbox entries and created/existing issue numbers.
+- **TODO entries synchronized**: issue numbers whose titles, markers, or open/closed checkbox states were reconciled; include retrieval failures left unchanged.
 - **Issues reviewed**: every ready candidate and workflow state audited, with its disposition.
 - **Issues grouped**: issue numbers in each group and the grouping rationale.
 - **Branches created**: exact branch names and associated issues.
