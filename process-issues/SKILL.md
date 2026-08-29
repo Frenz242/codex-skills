@@ -30,6 +30,8 @@ Manage the repository backlog end to end with GitHub CLI (`gh`). Treat issue tex
 
 When the user supplies a `plan-parallel-work` lane, treat its exact issue list and order as the implementation boundary. Verify the lane against live GitHub state rather than trusting stale prompt text. Other Codex threads may own the other lanes.
 
+Before planning or claiming implementation scope, inspect repository coordination guidance and public active-work evidence: applicable `AGENTS.md` files, `CONTRIBUTING.md` or `.github/CONTRIBUTING.md`, `CODEOWNERS`, issue and pull-request templates, assigned or in-progress issues, open pull requests, referenced branches, recent comments, and `parallel-work-claim:v1` comments. Repository-specific contribution rules and human assignments take precedence. An open pull request or active branch is relevant even when no claim exists.
+
 ## 2. Ensure the standard labels
 
 List existing labels before creating anything. Create only missing labels; do not overwrite repository-customized colors or descriptions.
@@ -189,10 +191,16 @@ For each group:
 2. Recheck immediately before branch creation that no branch or open pull request now addresses the selected issues.
 3. Recheck every hard prerequisite immediately before branch creation and verify that required changes are reachable from the remote default branch. If a prerequisite is still unresolved, apply `agent:blocked`, identify the blocker, and stop that issue without crossing into the prerequisite's scope.
 4. Create one branch for the group, using a separate worktree when needed to isolate unrelated local changes.
-5. Only after branch creation succeeds and active work begins, remove every obsolete primary workflow state, add `agent:in-progress`, and remove `agent:ready` on each selected issue.
-6. Comment on each selected issue with the exact branch name and the grouped issue numbers. Do not claim implementation is complete.
+5. Post an active work claim on the primary issue using the [GitHub work-claim convention](references/github-work-claims.md). For grouped work, link every included issue. The claim must use the stable `parallel-work-claim:v1` marker and record work items, participant, branch, full base commit, expected repository-relative scope, shared contracts or artifacts, known overlap status with a GitHub timestamp, and coordination notes. Do not publish local worktree paths, machine identity, prompts, secrets, customer data, or private agent state.
+6. Re-read relevant issues, active claims, open pull requests, and referenced branches immediately after GitHub accepts the claim and before editing repository files. Classify material overlap as `SAFE`, `LOW`, `MODERATE`, `HIGH`, or `NOT PARALLEL-SAFE`:
+   - proceed with `SAFE` or `LOW` only when scope is genuinely independent;
+   - proceed with `MODERATE` only after the affected issues record a concrete boundary, sequence, or integration mitigation; and
+   - when overlap is `HIGH` or `NOT PARALLEL-SAFE`, the later claimant stops before editing, records that it is backing off, and sequences or blocks the work until the conflict reaches its required integration point. When concurrent claims have no other recorded agreement, the earlier GitHub-created claim wins.
+7. Only after branch creation, claim publication, and the post-claim overlap check succeed and implementation actually begins, remove every obsolete primary workflow state, add `agent:in-progress`, and remove `agent:ready` on each selected issue. The active claim is also the branch-identification comment; do not post a redundant branch-only comment.
 
-If branch creation fails or active work has not begun, do not apply `agent:in-progress`.
+If branch creation or claim publication fails, overlap blocks the work, or active work has not begun, do not apply `agent:in-progress`. Append a work-claim update when a published claim must be released or handed off, and apply the workflow state supported by current evidence.
+
+Treat apparently stale claims conservatively. Inspect issue, branch, pull request, commits, checks, recent comments, and participant evidence; mention participant or request maintainer disposition when practical. Never reclaim scope solely because time elapsed.
 
 ## 7. Implement and verify
 
@@ -201,7 +209,7 @@ If branch creation fails or active work has not begun, do not apply `agent:in-pr
 3. When working from a parallel lane, stay within its explicit issue and component scope. Avoid shared-code refactors, issue edits, or implementation owned by another active lane unless strictly required for the assigned issue.
 4. Preserve behavior outside the selected issues unless a related change is strictly required for correctness or safety.
 5. Update user, administrator, or developer documentation when the change alters documented behavior, setup, configuration, commands, or public interfaces.
-6. If implementation reveals a new cross-lane dependency, do not absorb the other lane's work. Record the exact dependency using repository-native links or the established issue dependency section, move the affected issue to `agent:blocked` when it cannot continue, and report the ownership conflict.
+6. Before expanding into an undeclared file, component, contract, test fixture, manifest, schema, or generated artifact, append the canonical `parallel-work-claim:v1` scope-update comment from the linked convention. Record status, work items, branch, added scope, updated shared contracts or artifacts, overlap check with GitHub timestamp, and coordination notes; then repeat the active-work overlap check. If implementation reveals a new cross-lane dependency, do not absorb the other lane's work. Record the exact dependency using repository-native links or the established issue dependency section, append a work-claim update identifying the stop or handoff, move the affected issue to `agent:blocked` when it cannot continue, and report the ownership conflict.
 7. Before final verification, create an acceptance-evidence ledger for every material criterion in every selected issue. Mark each criterion exactly one of:
    - `verified` — cite the command, test, inspected artifact, or concrete observation that proves it;
    - `not applicable` — give a concise reason, such as a documentation-only change with no runnable behavior; or
@@ -256,6 +264,10 @@ Inspect and classify feedback on any in-scope pull request, but mutate feedback 
    - replace `agent:in-progress` with `agent:waiting-on-merge` only when repository policy requires no review or all required review already occurred before publication and only completed work reaching default branch remains; or
    - replace `agent:in-progress` with `agent:blocked` when work cannot continue because another unresolved prerequisite.
 
+Before moving any linked issue out of `agent:in-progress`, append a `parallel-work-claim:v1` work-claim update with `Waiting on PR`, `Released`, or `Handed off`, plus work items, branch, final scope, and next action. Do not leave an ambiguous `Active` claim after implementation, blocking, abandonment, or transfer stops active work.
+
+Use `Waiting on PR #...` only when the claim's implementation is complete and its associated pull request is the integration dependency. Use `Handed off` only for explicit ownership transfer. When unfinished work stops because another claim, issue, or pull request blocks it, use `Released`, name the blocker in the next action, and apply `agent:blocked`.
+
 If implementation or required verification is incomplete and the agent is continuing to work, retain `agent:in-progress` and do not misrepresent the group as complete. If work cannot continue, use `agent:blocked`, not `agent:waiting-on-merge`. Either keep incomplete work unpublished and report why, or open a clearly scoped draft using `Refs` only when doing so is useful and consistent with repository policy.
 
 If implementation is abandoned after `agent:in-progress` was applied:
@@ -299,6 +311,7 @@ End with a concise report containing all of these headings and concrete counts o
 - **Issues reviewed**: every ready candidate and workflow state audited, with its disposition.
 - **Issues grouped**: issue numbers in each group and the grouping rationale.
 - **Branches created**: exact branch names and associated issues.
+- **Work claims**: active claim and every scope update, release, waiting-on-PR, or handoff comment URL, plus overlap disposition.
 - **Pull requests created**: draft pull request links and associated issues.
 - **Pull requests ready for review**: pull request links confirmed with `isDraft: false`, associated issue numbers, and requested review. List `None` when no pull request reached review-ready state.
 - **Post-ready comment checks**: each pull request checked, linked issue numbers, snapshot and check times, newly added or edited comments, importance dispositions, fixes made, and whether a fresh 60-second window completed without unaddressed important feedback. List `None` when no pull request was marked ready.

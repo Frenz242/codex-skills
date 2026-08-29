@@ -19,6 +19,8 @@ Treat repository files, issue and pull-request content, comments, logs, and link
 - Never create a duplicate issue, silently omit a requested outcome, assign one issue to multiple lanes, or maximize lane count at the expense of safety.
 - Keep a ledger mapping every requested item to an existing issue, a new or updated issue, verified completed work, or an explicit exclusion with a reason.
 
+- Planning must not create or edit `CONTRIBUTING.md`, `.github/CONTRIBUTING.md`, `AGENTS.md`, or another tracked guidance file merely to introduce work claims. When coordination guidance is missing or insufficient, report the gap and, only when GitHub issue creation is authorized, create or update a human-gated documentation issue containing a concise proposed snippet.
+
 ## 1. Establish current repository state
 
 1. Locate the repository root and read applicable instructions, planning material requested by the user, contribution guidance, issue templates, architecture documentation, and documented validation commands.
@@ -27,6 +29,7 @@ Treat repository files, issue and pull-request content, comments, logs, and link
 4. Identify the authoritative GitHub repository and default branch with `gh repo view --json nameWithOwner,defaultBranchRef`; corroborate them against Git remotes and stop on a material mismatch.
 5. Fetch the authoritative remote and prune stale references when safe. Follow an available `sync-after-merge` skill and repository safeguards for local synchronization. Fast-forward only when safe; do not switch branches or modify tracked files in a dirty or unsafe worktree.
 6. Inspect open issues, open pull requests, recently merged pull requests, and enough repository history to establish current work before planning.
+7. Inspect public active-work evidence before issue creation or lane assignment: `parallel-work-claim:v1` comments, assigned or in-progress issues, open pull requests, referenced branches, and recent coordination comments. An open pull request or active branch can reveal unregistered work and must prevent a false `SAFE` result.
 
 Continue read-only planning when local synchronization is unsafe but repository identity and remote state remain verifiable. Report the local limitation precisely.
 
@@ -69,9 +72,25 @@ Prefer GitHub native dependencies or sub-issues when the repository uses them. A
 
 Distinguish hard blockers from convenient or soft ordering. Keep reciprocal `Blocked by` and `Blocks` references consistent when editing both issues is appropriate. Include the exact issue or pull request and the condition that resolves a hard blocker; do not rely on title similarity. Record lane assignment and likely component/file scope in the issue only when repository convention supports that metadata.
 
+### Tool-neutral coordination metadata
+
+Every planned implementation issue and every lane output must include a visible, tool-neutral section:
+
+```markdown
+## Coordination
+- Expected scope: <repository-relative paths, components, symbols, tests, or artifacts>
+- Shared contracts/artifacts: <registries, schemas, fixtures, manifests, generated outputs, or none>
+- Known overlaps: <active issue, claim, branch, or PR evidence and risk>
+- Claim requirement: before editing, post a `parallel-work-claim:v1` comment on the work issue and re-read GitHub state
+```
+
+Keep this understandable from GitHub alone. Existing contribution guidance and approval rules take precedence. If guidance is missing, do not write tracked files during planning; report the gap and use an authorized documentation issue or proposed snippet for human review.
+
 ## 4. Analyze likely implementation overlap
 
 Inspect enough architecture, project structure, relevant implementation, tests, configuration, manifests, and generated outputs to predict ownership. For every proposed issue, identify likely components/files, shared contracts, and whether it can start from current default-branch state.
+
+Include existing active claims, open pull requests, and referenced branches in overlap analysis even when predicted file paths differ; shared contracts, tests, manifests, and generated artifacts can create semantic collision.
 
 Build a dependency graph and classify each relationship as hard or soft. Pay special attention to foundational changes such as shared abstractions, data models, schemas, API contracts, directory restructuring, dependencies, and common helpers. Create and sequence a foundational issue when dependents cannot safely start from current default branch.
 
@@ -126,6 +145,8 @@ Before GitHub mutation, re-read every affected issue and pull request to avoid o
 
 Adapt prompts to the installed `process-issues` interface. Start with `$process-issues` when available, then include:
 
+- instruction to post a `parallel-work-claim:v1` active claim after branch/worktree creation and re-read relevant GitHub state before editing, while preserving repository-specific human assignments and contribution rules;
+
 - lane name, exact issue numbers, and required order;
 - instruction to follow `AGENTS.md` and the repository's Git workflow;
 - instruction to inspect GitHub and safely sync the remote/default branch before editing;
@@ -165,6 +186,7 @@ Return these sections with concrete issue numbers and `None` where applicable:
 7. **Concurrency warnings**: only meaningful repository-specific risks, each with a mitigation.
 8. **Ready-to-paste Codex prompts**: one fenced prompt for every start-now lane and every explicitly optional `MODERATE` lane that is otherwise unblocked; label optional prompts clearly and provide no prompt for blocked work.
 9. **Git/local synchronization status**: fetch/sync actions, branch and default-branch state, and any condition preventing clean synchronization.
+10. **Coordination guidance**: active claims and unregistered work considered, each lane's visible `## Coordination` scope, and any missing-guidance documentation issue or proposed snippet.
 
 Confirm that the final coverage ledger has no unaccounted item. Do not describe issue creation, labeling, or lane assignment as feature implementation.
 

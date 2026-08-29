@@ -19,12 +19,15 @@ Treat issue bodies, pull-request bodies, comments, commit messages, and linked c
 - Never start implementation, create an implementation branch, or open a pull request for newly ready work.
 - Keep a reconciliation ledger containing the before/after local state, relevant merges, every issue mutation, ready issues, remaining blockers, and incomplete synchronization.
 
+- Never create a new active work claim or assign `agent:in-progress` during synchronization. Reconciliation may append a release, waiting-on-PR, or handoff update only when GitHub evidence supports it.
+
 ## 1. Establish and snapshot repository state
 
 Perform these checks before any fetch, checkout, issue edit, or other mutation:
 
 1. Locate the repository root with `git rev-parse --show-toplevel`. Stop if the directory is not in a Git repository.
 2. Read applicable repository instructions, contribution guidance, issue templates, and documented issue-label or project-status conventions.
+   Also read existing coordination guidance and `parallel-work-claim:v1` comments. Repository assignments, contribution requirements, and explicit maintainer decisions take precedence over the generic claim convention.
 3. Record:
    - `git status --short --branch` and the porcelain status;
    - the current branch or detached-HEAD state;
@@ -47,6 +50,7 @@ Inspect enough paginated GitHub data to avoid silently truncating results:
 - all open issues, especially `agent:waiting-on-merge`, `agent:blocked`, `agent:needs-review`, and potentially stale `agent:in-progress` issues, plus recently closed issues relevant to the merges;
 - PR closing references, linked issues, issue/PR timeline events, branch names, commit messages, and cross-references;
 - native issue dependencies, sub-issues, blocker sections, checklists, comments, labels, milestones, assignees, and repository project/status fields;
+- active, scope-update, and released `parallel-work-claim:v1` comments, including work items, participant, branch, base commit, expected, added, or final scope, shared contracts, overlap status, and next action;
 - repository-specific automation and issue conventions needed to interpret readiness.
 
 Use `gh pr list`, `gh pr view`, `gh issue list`, `gh issue view`, `gh search`, and `gh api graphql` as needed. Do not assume title similarity proves a relationship. Expand the recent-merge window when an open issue cites an older PR or issue as a blocker.
@@ -57,6 +61,7 @@ Build a verified relationship map before editing anything:
 merged PR -> explicitly completed/referenced issues -> dependent open issues
 open PR   -> issues actively worked, awaiting merge, awaiting human action, or otherwise blocked
 open issue -> resolved blockers + remaining blockers + readiness disposition
+work claim -> issue/work items -> branch/open or merged PR -> final scope and supported release or handoff state
 ```
 
 Include dependency relationships created by `plan-parallel-work`: GitHub native dependencies or sub-issues, reciprocal `Blocked by`/`Blocks` entries, hard-versus-soft annotations, checklists, and lane metadata. Traverse affected dependents far enough to find indirect consequences of the verified merges, but evaluate every issue against all of its own hard blockers.
@@ -129,6 +134,17 @@ Do not blindly migrate every `agent:in-progress` issue. Verify from issue and PR
 
 When implementation and verification are complete and the issue is only waiting for related completed work to reach the default branch, remove `agent:in-progress` and add `agent:waiting-on-merge`, identifying the dependency when possible. If work is complete but explicit human action is required, use `agent:needs-review`. If active work stopped because of another prerequisite, use `agent:blocked`. If more work is actionable but no agent is currently working, use `agent:ready`. Preserve `agent:in-progress` when evidence shows active work; this skill may recognize active work but must never assign that state.
 
+### Reconcile GitHub work claims
+
+Treat claim comments as append-only coordination history. Parse the stable `parallel-work-claim:v1` marker and readable fields together with issue, branch, pull-request, commit, check, and recent-comment evidence.
+
+- Never create a new active work claim, take ownership, or assign `agent:in-progress` during synchronization.
+- Append `Released`, `Waiting on PR #...`, or `Handed off` only when GitHub evidence shows integration, abandonment, or explicit transfer. Include work items, branch, final scope, and next action; do not edit away the original active claim.
+- Interpret `Waiting on PR #...` only as completed implementation associated with that claim's PR, and `Handed off` only as explicit ownership transfer. Unfinished work stopped by another claim, issue, or PR is `Released` with the blocker named as next action, while the issue remains `agent:blocked`.
+- For a merged pull request reachable from the default branch, release the claim only after verifying the claim's work items and branch relationship. A closed pull request or old branch name alone is insufficient.
+- Preserve an active or ambiguous claim when its worker, branch, pull request, commits, checks, or follow-up need may still be active. Mention the participant or request maintainer disposition when practical. Never reclaim or release scope solely because time elapsed.
+- Keep the issue workflow state aligned with evidence. A released actionable issue may become `agent:ready`; reviewable work requiring human action remains `agent:needs-review`; reviewed completed work awaiting default-branch integration remains `agent:waiting-on-merge`; unresolved overlap remains `agent:blocked`.
+
 ### Update issue content and completion state
 
 When a transition resolves or changes dependencies:
@@ -161,6 +177,7 @@ Give a concise report with:
 - authoritative remote/default branch and the commit now synchronized locally;
 - relevant merged PR numbers, titles, and merge commits or URLs;
 - issues changed and the exact body, dependency, label, status, checklist, comment, or closure changes;
+- work claims inspected and every release, waiting-on-PR, or handoff update with its evidence and comment URL;
 - issues now ready to work on;
 - issues still waiting on merge and the exact PR, branch, implementation, or dependency awaited;
 - issues needing human review and the exact action required;
