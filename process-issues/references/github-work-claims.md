@@ -73,6 +73,25 @@ Use `Waiting on PR #456` only when this claim's implementation is complete and i
 
 Keep the issue's workflow state aligned with evidence: active implementation is `agent:in-progress`; reviewable work needing human action is `agent:needs-review`; completed reviewed work awaiting default-branch integration is `agent:waiting-on-merge`; unresolved overlap is `agent:blocked`; released actionable work with no active participant is `agent:ready`. Repositories using another workflow keep their established assignments or status fields. When the repository uses the standard `agent:*` workflow but a required label is missing, create only the missing label through the standard label setup before applying it.
 
+## Reactivation after feedback
+
+When review or issue feedback reopens implementation after a claim was released, handed off, or set to `Waiting on PR`, return the pull request to draft and append a reactivation record before editing:
+
+```markdown
+<!-- parallel-work-claim:v1 -->
+### Work claim reactivation
+
+- **Status:** Active
+- **Work items:** #123
+- **Branch:** `feat/example`
+- **Resumed scope:** parser correction and related regression test
+- **Reason:** Address confirmed finding `<GitHub comment or review-thread URL>`
+- **Known overlaps:** None found; checked active issues and PRs at `<GitHub timestamp>`
+- **Coordination notes:** Corrections remain within the prior final scope.
+```
+
+Immediately re-read relevant issues, claims, branches, and pull requests. Apply `agent:in-progress` and resume edits only after the reactivation comment is accepted and the overlap check permits work. If the resumed scope expands, also use the canonical scope-update record before crossing that boundary.
+
 ## Apparently stale claims
 
 Do not use automatic leases or reclaim scope solely because time elapsed. Inspect the issue, branch, pull request, commits, checks, and recent comments. Mention the participant or request maintainer disposition when practical. Release or supersede the claim only when GitHub evidence shows integration, abandonment, or explicit transfer.
@@ -102,6 +121,10 @@ An initially disjoint change discovers it must edit a shared manifest. Expected 
 ### Release and handoff
 
 Implementation stops because a PR is ready, work is abandoned, or ownership transfers. Expected disposition: append a v1 update with `Waiting on PR`, `Released`, or `Handed off`, final scope, and next action; align workflow state without erasing history.
+
+### Feedback reopens implementation
+
+A review finding arrives after the claim is `Waiting on PR`. Expected disposition: return the PR to draft, append an `Active` reactivation record linked to the finding, re-run active-work discovery, and only then apply `agent:in-progress` and edit.
 
 ### Apparently stale claim
 

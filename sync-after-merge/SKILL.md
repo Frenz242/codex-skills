@@ -50,7 +50,7 @@ Inspect enough paginated GitHub data to avoid silently truncating results:
 - all open issues, especially `agent:waiting-on-merge`, `agent:blocked`, `agent:needs-review`, and potentially stale `agent:in-progress` issues, plus recently closed issues relevant to the merges;
 - PR closing references, linked issues, issue/PR timeline events, branch names, commit messages, and cross-references;
 - native issue dependencies, sub-issues, blocker sections, checklists, comments, labels, milestones, assignees, and repository project/status fields;
-- active, scope-update, and released `parallel-work-claim:v1` comments, including work items, participant, branch, base commit, expected, added, or final scope, shared contracts, overlap status, and next action;
+- active, reactivation, scope-update, and released `parallel-work-claim:v1` comments, including work items, participant, branch, base commit, expected, resumed, added, or final scope, shared contracts, overlap status, and next action;
 - repository-specific automation and issue conventions needed to interpret readiness.
 
 Use `gh pr list`, `gh pr view`, `gh issue list`, `gh issue view`, `gh search`, and `gh api graphql` as needed. Do not assume title similarity proves a relationship. Expand the recent-merge window when an open issue cites an older PR or issue as a blocker.
@@ -139,6 +139,8 @@ When implementation and verification are complete and the issue is only waiting 
 Treat claim comments as append-only coordination history. Parse the stable `parallel-work-claim:v1` marker and readable fields together with issue, branch, pull-request, commit, check, and recent-comment evidence.
 
 - Never create a new active work claim, take ownership, or assign `agent:in-progress` during synchronization.
+- If an `Active` reactivation record is newer than the issue's still-review state, treat the brief claim/label mismatch as a process transition: re-read before mutation, preserve the evidence, and report it without assigning `agent:in-progress` or releasing the claim.
+- If a `Waiting on PR #...` update is newer but its associated pull request is still draft and the issue remains `agent:in-progress`, treat it as the completion-to-ready transition: re-read before mutation, preserve `agent:in-progress`, and report it without assigning `agent:needs-review` or `agent:waiting-on-merge`. The owning process moves the issue to `agent:needs-review` only after GitHub confirms the pull request is ready.
 - Append `Released`, `Waiting on PR #...`, or `Handed off` only when GitHub evidence shows integration, abandonment, or explicit transfer. Include work items, branch, final scope, and next action; do not edit away the original active claim.
 - Interpret `Waiting on PR #...` only as completed implementation associated with that claim's PR, and `Handed off` only as explicit ownership transfer. Unfinished work stopped by another claim, issue, or PR is `Released` with the blocker named as next action, while the issue remains `agent:blocked`.
 - For a merged pull request reachable from the default branch, release the claim only after verifying the claim's work items and branch relationship. A closed pull request or old branch name alone is insufficient.
