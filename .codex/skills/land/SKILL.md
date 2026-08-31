@@ -40,12 +40,19 @@ set -euo pipefail
 
 preliminary_snapshot=$(mktemp)
 preliminary_inline=$(mktemp)
+preliminary_comments=$(mktemp)
+preliminary_check_runs=$(mktemp)
+preliminary_statuses=$(mktemp)
 review_poll=$(mktemp)
 final_snapshot=$(mktemp)
 final_inline=$(mktemp)
+final_comments=$(mktemp)
+final_reviews=$(mktemp)
+final_check_runs=$(mktemp)
+final_statuses=$(mktemp)
 rules_file=$(mktemp)
 rules_error=$(mktemp)
-trap 'rm -f "$preliminary_snapshot" "$preliminary_inline" "$review_poll" "$final_snapshot" "$final_inline" "$rules_file" "$rules_error"' EXIT
+trap 'rm -f "$preliminary_snapshot" "$preliminary_inline" "$preliminary_comments" "$preliminary_check_runs" "$preliminary_statuses" "$review_poll" "$final_snapshot" "$final_inline" "$final_comments" "$final_reviews" "$final_check_runs" "$final_statuses" "$rules_file" "$rules_error"' EXIT
 
 snapshot_fields=number,title,body,state,isDraft,headRefOid,baseRefName,mergeable,comments,reviews,statusCheckRollup
 gh pr view --json "$snapshot_fields" > "$preliminary_snapshot"
@@ -69,9 +76,18 @@ fi
 gh api --paginate --slurp \
   "repos/$repo_nwo/pulls/$pr_number/comments?per_page=100" \
   | jq 'flatten' > "$preliminary_inline"
+gh api --paginate --slurp \
+  "repos/$repo_nwo/issues/$pr_number/comments?per_page=100" \
+  | jq 'flatten' > "$preliminary_comments"
+gh api --paginate --slurp \
+  "repos/$repo_nwo/commits/$initial_head/check-runs?per_page=100" \
+  | jq '[.[].check_runs[]]' > "$preliminary_check_runs"
+gh api --paginate --slurp \
+  "repos/$repo_nwo/commits/$initial_head/statuses?per_page=100" \
+  | jq 'flatten' > "$preliminary_statuses"
 
 codex_review_pending() {
-  jq '[.comments[].body
+  jq '[.[].body
     | select(contains("codex-pull-request-review-summary"))
     | split("\n")[]
     | select(test("Code Review"; "i"))
@@ -79,7 +95,7 @@ codex_review_pending() {
   ] | length' "$1"
 }
 codex_review_failed() {
-  jq '[.comments[].body
+  jq '[.[].body
     | select(contains("codex-pull-request-review-summary"))
     | split("\n")[]
     | select(test("Code Review"; "i"))
@@ -88,27 +104,28 @@ codex_review_failed() {
 }
 export -f codex_review_pending codex_review_failed
 
-(( $(codex_review_failed "$preliminary_snapshot") == 0 )) || {
+(( $(codex_review_failed "$preliminary_comments") == 0 )) || {
   printf 'Codex review failed or was cancelled; return to Human Review.\n' >&2
   exit 1
 }
 
-review_pending=$(codex_review_pending "$preliminary_snapshot")
+review_pending=$(codex_review_pending "$preliminary_comments")
 if (( review_pending > 0 )); then
   timeout 10m bash -c '
     for attempt in {1..60}; do
-      gh pr view --json comments > "$1"
+      gh api --paginate --slurp \
+        "repos/$2/issues/$3/comments?per_page=100" | jq flatten > "$1"
       [[ $(codex_review_pending "$1") == 0 ]] && exit 0
       sleep 10
     done
     exit 124
-  ' _ "$review_poll" || exit 1
+  ' _ "$review_poll" "$repo_nwo" "$pr_number" || exit 1
 fi
 
-pending_checks=$(jq '[.statusCheckRollup[] | select(
-  (.__typename == "CheckRun" and .status != "COMPLETED") or
-  (.__typename == "StatusContext" and (.state == "PENDING" or .state == "EXPECTED"))
-)] | length' "$preliminary_snapshot")
+pending_checks=$((
+  $(jq '[.[] | select(.status != "completed")] | length' "$preliminary_check_runs") +
+  $(jq '[.[] | select(.state == "pending")] | length' "$preliminary_statuses")
+))
 if (( pending_checks > 0 )); then
   timeout 10m gh pr checks --watch || exit 1
 fi
@@ -145,10 +162,27 @@ gh api --paginate --slurp \
   | jq 'flatten' > "$final_inline"
 
 head_oid=$(jq -r .headRefOid "$final_snapshot")
+final_base=$(jq -r .baseRefName "$final_snapshot")
 [[ $head_oid == "$initial_head" ]] || {
   printf 'PR head changed after validation; return to Rework.\n' >&2
   exit 1
 }
+[[ $final_base == "$base_ref" ]] || {
+  printf 'PR base changed after the merge-queue check; return to Rework.\n' >&2
+  exit 1
+}
+gh api --paginate --slurp \
+  "repos/$repo_nwo/issues/$pr_number/comments?per_page=100" \
+  | jq 'flatten' > "$final_comments"
+gh api --paginate --slurp \
+  "repos/$repo_nwo/pulls/$pr_number/reviews?per_page=100" \
+  | jq 'flatten' > "$final_reviews"
+gh api --paginate --slurp \
+  "repos/$repo_nwo/commits/$head_oid/check-runs?per_page=100" \
+  | jq '[.[].check_runs[]]' > "$final_check_runs"
+gh api --paginate --slurp \
+  "repos/$repo_nwo/commits/$head_oid/statuses?per_page=100" \
+  | jq 'flatten' > "$final_statuses"
 [[ $(jq -r .state "$final_snapshot") == OPEN ]] || {
   printf 'PR is no longer open; stop landing.\n' >&2
   exit 1
@@ -161,31 +195,32 @@ head_oid=$(jq -r .headRefOid "$final_snapshot")
   printf 'PR is no longer cleanly mergeable; return to Rework.\n' >&2
   exit 1
 }
-(( $(codex_review_pending "$final_snapshot") == 0 )) || {
+(( $(codex_review_pending "$final_comments") == 0 )) || {
   printf 'Codex review is pending; return to Human Review.\n' >&2
   exit 1
 }
-(( $(codex_review_failed "$final_snapshot") == 0 )) || {
+(( $(codex_review_failed "$final_comments") == 0 )) || {
   printf 'Codex review failed or was cancelled; return to Human Review.\n' >&2
   exit 1
 }
 
-pending_checks=$(jq '[.statusCheckRollup[] | select(
-  (.__typename == "CheckRun" and .status != "COMPLETED") or
-  (.__typename == "StatusContext" and (.state == "PENDING" or .state == "EXPECTED"))
-)] | length' "$final_snapshot")
-failed_checks=$(jq '[.statusCheckRollup[] | select(
-  (.__typename == "CheckRun" and .status == "COMPLETED" and
-    (.conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED")) or
-  (.__typename == "StatusContext" and
-    (.state != "SUCCESS" and .state != "PENDING" and .state != "EXPECTED"))
-)] | length' "$final_snapshot")
+pending_checks=$((
+  $(jq '[.[] | select(.status != "completed")] | length' "$final_check_runs") +
+  $(jq '[.[] | select(.state == "pending")] | length' "$final_statuses")
+))
+failed_checks=$((
+  $(jq '[.[] | select(.status == "completed" and
+    (.conclusion != "success" and .conclusion != "neutral" and .conclusion != "skipped"))
+  ] | length' "$final_check_runs") +
+  $(jq '[.[] | select(.state != "success" and .state != "pending")] | length' "$final_statuses")
+))
 (( pending_checks == 0 && failed_checks == 0 )) || {
   printf 'A check is pending or failed; stop landing.\n' >&2
   exit 1
 }
 
-# Evaluate final_snapshot and final_inline for any new actionable feedback.
+# Evaluate final_snapshot, final_inline, final_comments, and final_reviews for
+# any new actionable feedback.
 # Reconfirm the tracker state is Merging using the targeted tracker operation.
 pr_title=$(jq -r .title "$final_snapshot")
 pr_body=$(jq -r .body "$final_snapshot")
