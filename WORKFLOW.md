@@ -5,7 +5,7 @@ tracker:
     api_key: $LINEAR_API_KEY
     project_slug: "ae9557646a73"
   required_labels:
-    - symphony
+    - "symphony"
   active_states:
     - Todo
     - In Progress
@@ -69,9 +69,9 @@ This is continuation attempt {{ attempt }}. Resume the existing workspace and wo
 - `Backlog`: do not modify; wait for a human to move it to `Todo`.
 - `Todo`: move to `In Progress`, create or load the workpad, classify scope, and execute.
 - `In Progress`: resume from current repository state and workpad.
-- `Human Review`: inactive; make no changes. Human feedback returns through `Rework`.
+- `Human Review`: inactive; make no implementation changes. The pull request must already be ready (`isDraft == false`) before the issue enters this state. Human or configured automated feedback returns through `Rework`.
 - `Rework`: read all feedback, update the existing workpad with the changed scope, implement on a suitable fresh branch when required, and return to `Human Review`.
-- `Merging`: load the repository's `land` skill only now and follow it until merged; then move to `Done`.
+- `Merging`: load the repository's `land` skill only now. Landing requires an open, non-draft PR whose readiness-triggered review has had time to run. If the PR is unexpectedly draft, do not make it ready and merge in the same pass; return it to the Human Review handoff and stop. Move to `Done` only after a confirmed synchronous merge.
 - Terminal states: do nothing.
 
 If the tracker tool is unavailable, use the configured fallback if one exists. Otherwise record a concise blocker in the workpad and move to `Human Review`; do not ask for interactive setup.
@@ -115,8 +115,8 @@ Use a detailed plan, principal-level self-review, reproduction, validation desig
 3. Sync from `origin/main` once before edits using the repository's pull procedure. Record only source, result, and resulting short SHA.
 4. Implement the smallest coherent diff. Keep temporary proof artifacts out of commits.
 5. Validate according to the selected tier and explicit ticket minimums.
-6. Commit and push using repository procedures, create a draft PR from its template, attach it to the issue, and apply required labels.
-7. Perform the single handoff sweep, update the workpad, and move to `Human Review` when scoped work is ready.
+6. Commit and push using repository procedures. Create or update a draft PR from its template while implementation is underway; attach it to the issue and apply required labels.
+7. Perform the single handoff sweep. When scoped work is ready, the Human Review handoff is the sole owner of the readiness transition: run `gh pr ready`, verify `isDraft == false`, update the workpad, and only then move the issue to `Human Review`. No other phase marks a PR ready.
 
 Load skills lazily, one immediate operation at a time. Do not preload tracker, pull, commit, push, and land instructions at kickoff. Load tracker instructions when a tracker mutation/query is needed, pull just before sync, commit when preparing commits, push when publishing, and land only in `Merging`. Generic skill validation never overrides this tier policy or adds repository-specific commands.
 
@@ -158,15 +158,16 @@ Associate evidence with the tested commit/tree and relevant environment. A fetch
 
 ## PR and CI handoff
 
-Use the repository PR template and keep the PR draft. Attach it to the issue and add required labels. At handoff, perform one complete sweep of top-level comments, inline comments, review summaries, and CI/check status.
+Use the repository PR template and keep the PR draft during implementation. Attach it to the issue and add required labels. At the Human Review handoff, perform one complete sweep of top-level comments, inline comments, review summaries, and CI/check status. After that sweep and all required metadata are complete, this handoff alone marks the PR ready and verifies `isDraft == false` before moving the issue to `Human Review`.
 
 - Address each actionable completed review/check result or give explicit justified pushback.
 - If no checks are configured, do not poll again.
 - If checks are pending, record that once and move to `Human Review` when implementation and scoped validation are ready; do not busy-wait.
 - Apply the baseline policy to unrelated completed failures.
 - Further feedback enters through `Rework`, not an in-turn polling loop.
+- Marking ready may trigger configured review automation. That review runs while the issue is in `Human Review`; never race it by entering `Merging` in the same pass.
 
-Do not merge outside `Merging`; preserve the repository's land behavior.
+Do not merge outside `Merging`. The land phase must fail closed on a draft PR and must never own both readiness and merge in one pass.
 
 ## Tier 1 action budget
 
@@ -174,7 +175,7 @@ A Tier 1 ticket should normally use no more than about 12 shell-command calls, 3
 
 ## Completion
 
-Before `Human Review`, confirm the acceptance criteria, tier validation, ticket-required validation, exact diff, draft PR/attachment/labels, and one handoff sweep. The final workpad update contains the current result and any pending CI or baseline exception. The final agent response reports completed actions and blockers only.
+Before `Human Review`, confirm the acceptance criteria, tier validation, ticket-required validation, exact diff, PR attachment/labels/metadata, and one handoff sweep. Then mark the draft ready, verify `isDraft == false`, update the workpad with the current result and any pending CI or baseline exception, and move the issue to `Human Review`. The final agent response reports completed actions and blockers only.
 <!-- END SHARED SYMPHONY POLICY -->
 
 <!-- BEGIN REPOSITORY-SPECIFIC POLICY -->
@@ -185,10 +186,12 @@ Before `Human Review`, confirm the acceptance criteria, tier validation, ticket-
 - New reusable skills use a focused top-level directory and the lightweight observation footer defined by `improve-skills/references/observation-protocol.md`, unless the skill documents why recording is inappropriate.
 - Keep reusable skill content generic and public-safe. Never add machine deployment tooling, local project manifests, client-specific WLC policy, credentials, or host-specific secret paths to this repository.
 - Do not load the repository's `process-issues` skill as a second Symphony orchestration workflow; this `WORKFLOW.md` owns issue routing and validation tiers.
-- Use feature branches and draft pull requests based on `.github/pull_request_template.md`.
+- Use feature branches and draft pull requests based on `.github/pull_request_template.md` during implementation. The shared Human Review handoff is the sole owner of marking the PR ready after validation, metadata, attachment, labels, and the handoff sweep; verify `isDraft == false` before moving the tracker issue to Human Review.
 - In `Merging`, load `.codex/skills/land/SKILL.md`. It performs one bounded
-  final sweep, does not wait for nonexistent automation, merges only from
-  `Merging`, and moves the issue to `Done` only after GitHub confirms the merge.
+  final authoritative sweep, fails closed on a draft, pending review, changed
+  head, new feedback/check result, or merge queue, and binds a direct merge to
+  the inspected head. It moves the issue to `Done` only after GitHub confirms
+  the synchronous merge. It never combines readiness and merge.
 - Do not merge outside `Merging`.
 
 ## Validation profiles
