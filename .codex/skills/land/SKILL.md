@@ -36,6 +36,8 @@ state.
 Use temporary files so every evaluated value comes from one named snapshot:
 
 ```bash
+set -euo pipefail
+
 preliminary_snapshot=$(mktemp)
 preliminary_inline=$(mktemp)
 review_poll=$(mktemp)
@@ -53,7 +55,10 @@ base_ref=$(jq -r .baseRefName "$preliminary_snapshot")
 repo_nwo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 owner_type=$(gh api "repos/$repo_nwo" --jq .owner.type)
 
-[[ $(jq -r .state "$preliminary_snapshot") == OPEN ]]
+[[ $(jq -r .state "$preliminary_snapshot") == OPEN ]] || {
+  printf 'PR is not open; stop landing.\n' >&2
+  exit 1
+}
 if [[ $(jq -r .isDraft "$preliminary_snapshot") != false ]]; then
   printf 'PR is still draft; return to the Human Review handoff and stop.\n' >&2
   exit 1
@@ -73,7 +78,20 @@ codex_review_pending() {
     | select((test("Completed|Failed|Cancelled"; "i")) | not)
   ] | length' "$1"
 }
-export -f codex_review_pending
+codex_review_failed() {
+  jq '[.comments[].body
+    | select(contains("codex-pull-request-review-summary"))
+    | split("\n")[]
+    | select(test("Code Review"; "i"))
+    | select(test("Failed|Cancelled"; "i"))
+  ] | length' "$1"
+}
+export -f codex_review_pending codex_review_failed
+
+(( $(codex_review_failed "$preliminary_snapshot") == 0 )) || {
+  printf 'Codex review failed or was cancelled; return to Human Review.\n' >&2
+  exit 1
+}
 
 review_pending=$(codex_review_pending "$preliminary_snapshot")
 if (( review_pending > 0 )); then
@@ -131,10 +149,26 @@ head_oid=$(jq -r .headRefOid "$final_snapshot")
   printf 'PR head changed after validation; return to Rework.\n' >&2
   exit 1
 }
-[[ $(jq -r .state "$final_snapshot") == OPEN ]]
-[[ $(jq -r .isDraft "$final_snapshot") == false ]]
-[[ $(jq -r .mergeable "$final_snapshot") == MERGEABLE ]]
-(( $(codex_review_pending "$final_snapshot") == 0 ))
+[[ $(jq -r .state "$final_snapshot") == OPEN ]] || {
+  printf 'PR is no longer open; stop landing.\n' >&2
+  exit 1
+}
+[[ $(jq -r .isDraft "$final_snapshot") == false ]] || {
+  printf 'PR returned to draft; return to Human Review.\n' >&2
+  exit 1
+}
+[[ $(jq -r .mergeable "$final_snapshot") == MERGEABLE ]] || {
+  printf 'PR is no longer cleanly mergeable; return to Rework.\n' >&2
+  exit 1
+}
+(( $(codex_review_pending "$final_snapshot") == 0 )) || {
+  printf 'Codex review is pending; return to Human Review.\n' >&2
+  exit 1
+}
+(( $(codex_review_failed "$final_snapshot") == 0 )) || {
+  printf 'Codex review failed or was cancelled; return to Human Review.\n' >&2
+  exit 1
+}
 
 pending_checks=$(jq '[.statusCheckRollup[] | select(
   (.__typename == "CheckRun" and .status != "COMPLETED") or
@@ -146,7 +180,10 @@ failed_checks=$(jq '[.statusCheckRollup[] | select(
   (.__typename == "StatusContext" and
     (.state != "SUCCESS" and .state != "PENDING" and .state != "EXPECTED"))
 )] | length' "$final_snapshot")
-(( pending_checks == 0 && failed_checks == 0 ))
+(( pending_checks == 0 && failed_checks == 0 )) || {
+  printf 'A check is pending or failed; stop landing.\n' >&2
+  exit 1
+}
 
 # Evaluate final_snapshot and final_inline for any new actionable feedback.
 # Reconfirm the tracker state is Merging using the targeted tracker operation.
@@ -154,7 +191,10 @@ pr_title=$(jq -r .title "$final_snapshot")
 pr_body=$(jq -r .body "$final_snapshot")
 gh pr merge "$pr_number" --squash --match-head-commit "$head_oid" \
   --subject "$pr_title" --body "$pr_body"
-[[ $(gh pr view "$pr_number" --json state --jq .state) == MERGED ]]
+[[ $(gh pr view "$pr_number" --json state --jq .state) == MERGED ]] || {
+  printf 'GitHub did not confirm the merge; do not move the tracker issue.\n' >&2
+  exit 1
+}
 # Only now move the tracker issue to Done.
 ```
 

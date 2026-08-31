@@ -25,6 +25,9 @@ class SymphonyPolicyTests(unittest.TestCase):
         self.assertIn("for attempt in {1..60}", land)
         self.assertIn("for attempt in 1 2 3 4 5 6", land)
         self.assertIn("codex_review_pending", land)
+        self.assertIn("codex_review_failed", land)
+        self.assertIn("Failed|Cancelled", land)
+        self.assertIn("set -euo pipefail", land)
         self.assertIn("reports `MERGED`", land)
         self.assertIn("tracker issue to `Done`", land)
         self.assertNotIn("while true", land)
@@ -54,6 +57,9 @@ class SymphonyPolicyTests(unittest.TestCase):
         self.assertGreater(final_snapshot, land.index("rules/branches"))
         self.assertLess(final_snapshot, land.index('gh pr merge "$pr_number"'))
         self.assertIn("pending_checks == 0 && failed_checks == 0", land)
+        self.assertIn("pending_checks == 0 && failed_checks == 0 )) || {", land)
+        self.assertIn('codex_review_failed "$final_snapshot"', land)
+        self.assertGreaterEqual(land.count("exit 1"), 10)
         self.assertIn(
             "Evaluate final_snapshot and final_inline for any new actionable feedback",
             land,
