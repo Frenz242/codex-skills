@@ -185,7 +185,11 @@ Before `Human Review`, confirm the acceptance criteria, tier validation, ticket-
 - New reusable skills use a focused top-level directory and the lightweight observation footer defined by `improve-skills/references/observation-protocol.md`, unless the skill documents why recording is inappropriate.
 - Keep reusable skill content generic and public-safe. Never add machine deployment tooling, local project manifests, client-specific WLC policy, credentials, or host-specific secret paths to this repository.
 - Do not load the repository's `process-issues` skill as a second Symphony orchestration workflow; this `WORKFLOW.md` owns issue routing and validation tiers.
-- Use feature branches and draft pull requests. Do not merge outside `Merging`.
+- Use feature branches and draft pull requests based on `.github/pull_request_template.md`.
+- In `Merging`, load `.codex/skills/land/SKILL.md`. It performs one bounded
+  final sweep, does not wait for nonexistent automation, merges only from
+  `Merging`, and moves the issue to `Done` only after GitHub confirms the merge.
+- Do not merge outside `Merging`.
 
 ## Validation profiles
 
