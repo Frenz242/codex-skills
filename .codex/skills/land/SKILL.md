@@ -42,6 +42,7 @@ preliminary_snapshot=$(mktemp)
 preliminary_inline=$(mktemp)
 preliminary_comments=$(mktemp)
 preliminary_reviews=$(mktemp)
+preliminary_threads=$(mktemp)
 preliminary_check_runs=$(mktemp)
 preliminary_status_history=$(mktemp)
 preliminary_statuses=$(mktemp)
@@ -50,12 +51,13 @@ final_snapshot=$(mktemp)
 final_inline=$(mktemp)
 final_comments=$(mktemp)
 final_reviews=$(mktemp)
+final_threads=$(mktemp)
 final_check_runs=$(mktemp)
 final_status_history=$(mktemp)
 final_statuses=$(mktemp)
 rules_file=$(mktemp)
 rules_error=$(mktemp)
-trap 'rm -f "$preliminary_snapshot" "$preliminary_inline" "$preliminary_comments" "$preliminary_reviews" "$preliminary_check_runs" "$preliminary_status_history" "$preliminary_statuses" "$review_poll" "$final_snapshot" "$final_inline" "$final_comments" "$final_reviews" "$final_check_runs" "$final_status_history" "$final_statuses" "$rules_file" "$rules_error"' EXIT
+trap 'rm -f "$preliminary_snapshot" "$preliminary_inline" "$preliminary_comments" "$preliminary_reviews" "$preliminary_threads" "$preliminary_check_runs" "$preliminary_status_history" "$preliminary_statuses" "$review_poll" "$final_snapshot" "$final_inline" "$final_comments" "$final_reviews" "$final_threads" "$final_check_runs" "$final_status_history" "$final_statuses" "$rules_file" "$rules_error"' EXIT
 
 status_reducer=.codex/skills/land/scripts/latest-statuses.jq
 [[ -r $status_reducer ]] || {
@@ -69,7 +71,10 @@ pr_number=$(jq -r .number "$preliminary_snapshot")
 initial_head=$(jq -r .headRefOid "$preliminary_snapshot")
 base_ref=$(jq -r .baseRefName "$preliminary_snapshot")
 repo_nwo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+repo_owner=${repo_nwo%%/*}
+repo_name=${repo_nwo#*/}
 owner_type=$(gh api "repos/$repo_nwo" --jq .owner.type)
+review_threads_query='query($owner:String!,$name:String!,$number:Int!,$endCursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$endCursor){nodes{id isResolved}pageInfo{hasNextPage endCursor}}}}}'
 
 [[ $(jq -r .state "$preliminary_snapshot") == OPEN ]] || {
   printf 'PR is not open; stop landing.\n' >&2
@@ -91,6 +96,10 @@ gh api --paginate --slurp \
 gh api --paginate --slurp \
   "repos/$repo_nwo/pulls/$pr_number/reviews?per_page=100" \
   | jq 'flatten' > "$preliminary_reviews"
+gh api graphql --paginate --slurp \
+  -f query="$review_threads_query" -F owner="$repo_owner" \
+  -F name="$repo_name" -F number="$pr_number" \
+  | jq '[.[].data.repository.pullRequest.reviewThreads.nodes[]]' > "$preliminary_threads"
 gh api --paginate --slurp \
   "repos/$repo_nwo/commits/$initial_head/check-runs?per_page=100" \
   | jq '[.[].check_runs[]]' > "$preliminary_check_runs"
@@ -192,6 +201,10 @@ gh api --paginate --slurp \
 gh api --paginate --slurp \
   "repos/$repo_nwo/pulls/$pr_number/reviews?per_page=100" \
   | jq 'flatten' > "$final_reviews"
+gh api graphql --paginate --slurp \
+  -f query="$review_threads_query" -F owner="$repo_owner" \
+  -F name="$repo_name" -F number="$pr_number" \
+  | jq '[.[].data.repository.pullRequest.reviewThreads.nodes[]]' > "$final_threads"
 gh api --paginate --slurp \
   "repos/$repo_nwo/commits/$head_oid/check-runs?per_page=100" \
   | jq '[.[].check_runs[]]' > "$final_check_runs"
@@ -240,9 +253,11 @@ actionable_feedback=$(jq -n \
   --slurpfile preliminary_inline "$preliminary_inline" \
   --slurpfile preliminary_comments "$preliminary_comments" \
   --slurpfile preliminary_reviews "$preliminary_reviews" \
+  --slurpfile preliminary_threads "$preliminary_threads" \
   --slurpfile final_inline "$final_inline" \
   --slurpfile final_comments "$final_comments" \
   --slurpfile final_reviews "$final_reviews" \
+  --slurpfile final_threads "$final_threads" \
   -f "$feedback_reducer")
 (( actionable_feedback == 0 )) || {
   printf 'New feedback or a change-requesting review appeared; return to Rework.\n' >&2

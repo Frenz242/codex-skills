@@ -59,6 +59,8 @@ class SymphonyPolicyTests(unittest.TestCase):
         self.assertIn("latest-statuses.jq", land)
         self.assertIn("actionable-feedback.jq", land)
         self.assertIn('--slurpfile preliminary_reviews "$preliminary_reviews"', land)
+        self.assertIn('--slurpfile preliminary_threads "$preliminary_threads"', land)
+        self.assertIn('--slurpfile final_threads "$final_threads"', land)
         self.assertIn("rules/branches", land)
         self.assertIn("rules/branches/$base_ref", land)
         self.assertIn("/pulls/$pr_number/comments?per_page=100", land)
@@ -82,6 +84,8 @@ class SymphonyPolicyTests(unittest.TestCase):
         self.assertNotIn("rules/branches/main", land)
         self.assertLess(land.index('> "$preliminary_reviews"'), land.index("timeout 10m"))
         self.assertGreaterEqual(land.count("/pulls/$pr_number/reviews?per_page=100"), 2)
+        self.assertEqual(land.count("reviewThreads(first:100,after:$endCursor)"), 1)
+        self.assertGreaterEqual(land.count("gh api graphql --paginate --slurp"), 2)
         for binding in (
             '--slurpfile final_inline "$final_inline"',
             '--slurpfile final_comments "$final_comments"',
@@ -108,6 +112,8 @@ class SymphonyPolicyTests(unittest.TestCase):
             final_inline: list[dict],
             final_comments: list[dict],
             final_reviews: list[dict],
+            preliminary_threads: list[dict] | None = None,
+            final_threads: list[dict] | None = None,
         ) -> int:
             values = {
                 "preliminary_inline": preliminary_inline,
@@ -116,6 +122,8 @@ class SymphonyPolicyTests(unittest.TestCase):
                 "final_inline": final_inline,
                 "final_comments": final_comments,
                 "final_reviews": final_reviews,
+                "preliminary_threads": preliminary_threads or [],
+                "final_threads": final_threads or [],
             }
             with tempfile.TemporaryDirectory() as directory:
                 arguments = ["jq", "-n"]
@@ -205,6 +213,37 @@ class SymphonyPolicyTests(unittest.TestCase):
         edited_comment = [{"id": 2, "body": "Please revise", "updated_at": "2"}]
         self.assertEqual(
             count(inline, comments, approved, inline, edited_comment, approved),
+            1,
+        )
+        summary_pending = [
+            {
+                "id": 2,
+                "body": "codex-pull-request-review-summary Running",
+                "updated_at": "1",
+            }
+        ]
+        summary_complete = [
+            {
+                "id": 2,
+                "body": "codex-pull-request-review-summary Completed",
+                "updated_at": "2",
+            }
+        ]
+        self.assertEqual(
+            count(inline, summary_pending, approved, inline, summary_complete, approved),
+            0,
+        )
+        self.assertEqual(
+            count(
+                inline,
+                comments,
+                approved,
+                inline,
+                comments,
+                approved,
+                preliminary_threads=[{"id": "thread-1", "isResolved": True}],
+                final_threads=[{"id": "thread-1", "isResolved": False}],
+            ),
             1,
         )
 
