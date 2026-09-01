@@ -1,4 +1,7 @@
 from pathlib import Path
+import json
+import subprocess
+import tempfile
 import unittest
 
 
@@ -53,6 +56,7 @@ class SymphonyPolicyTests(unittest.TestCase):
         self.assertIn("final_reviews", land)
         self.assertIn("final_check_runs", land)
         self.assertIn("final_statuses", land)
+        self.assertIn("latest-statuses.jq", land)
         self.assertIn("rules/branches", land)
         self.assertIn("/issues/$pr_number/comments?per_page=100", land)
         self.assertIn("/reviews?per_page=100", land)
@@ -73,6 +77,29 @@ class SymphonyPolicyTests(unittest.TestCase):
             "final_comments, and final_reviews",
             land,
         )
+
+    def test_commit_status_reducer_keeps_newest_context_state(self) -> None:
+        reducer = ROOT / ".codex/skills/land/scripts/latest-statuses.jq"
+        history = [
+            {"context": "lint", "state": "success", "id": 4},
+            {"context": "tests", "state": "success", "id": 3},
+            {"context": "lint", "state": "failure", "id": 2},
+            {"context": "tests", "state": "pending", "id": 1},
+            {"context": "deploy", "state": "pending", "id": 0},
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "statuses.json"
+            source.write_text(json.dumps(history), encoding="utf-8")
+            result = subprocess.run(
+                ["jq", "-f", str(reducer), str(source)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        latest = {item["context"]: item for item in json.loads(result.stdout)}
+        self.assertEqual(latest["lint"], {"context": "lint", "state": "success", "id": 4})
+        self.assertEqual(latest["tests"], {"context": "tests", "state": "success", "id": 3})
+        self.assertEqual(latest["deploy"], {"context": "deploy", "state": "pending", "id": 0})
 
 
 if __name__ == "__main__":

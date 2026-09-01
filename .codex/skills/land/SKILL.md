@@ -42,6 +42,7 @@ preliminary_snapshot=$(mktemp)
 preliminary_inline=$(mktemp)
 preliminary_comments=$(mktemp)
 preliminary_check_runs=$(mktemp)
+preliminary_status_history=$(mktemp)
 preliminary_statuses=$(mktemp)
 review_poll=$(mktemp)
 final_snapshot=$(mktemp)
@@ -49,10 +50,17 @@ final_inline=$(mktemp)
 final_comments=$(mktemp)
 final_reviews=$(mktemp)
 final_check_runs=$(mktemp)
+final_status_history=$(mktemp)
 final_statuses=$(mktemp)
 rules_file=$(mktemp)
 rules_error=$(mktemp)
-trap 'rm -f "$preliminary_snapshot" "$preliminary_inline" "$preliminary_comments" "$preliminary_check_runs" "$preliminary_statuses" "$review_poll" "$final_snapshot" "$final_inline" "$final_comments" "$final_reviews" "$final_check_runs" "$final_statuses" "$rules_file" "$rules_error"' EXIT
+trap 'rm -f "$preliminary_snapshot" "$preliminary_inline" "$preliminary_comments" "$preliminary_check_runs" "$preliminary_status_history" "$preliminary_statuses" "$review_poll" "$final_snapshot" "$final_inline" "$final_comments" "$final_reviews" "$final_check_runs" "$final_status_history" "$final_statuses" "$rules_file" "$rules_error"' EXIT
+
+status_reducer=.codex/skills/land/scripts/latest-statuses.jq
+[[ -r $status_reducer ]] || {
+  printf 'Missing commit-status reducer: %s\n' "$status_reducer" >&2
+  exit 1
+}
 
 snapshot_fields=number,title,body,state,isDraft,headRefOid,baseRefName,mergeable,comments,reviews,statusCheckRollup
 gh pr view --json "$snapshot_fields" > "$preliminary_snapshot"
@@ -84,7 +92,10 @@ gh api --paginate --slurp \
   | jq '[.[].check_runs[]]' > "$preliminary_check_runs"
 gh api --paginate --slurp \
   "repos/$repo_nwo/commits/$initial_head/statuses?per_page=100" \
-  | jq 'flatten' > "$preliminary_statuses"
+  | jq 'flatten' > "$preliminary_status_history"
+# The statuses endpoint is newest-first and includes historical updates. Keep
+# only the newest record for each context before evaluating the gate.
+jq -f "$status_reducer" "$preliminary_status_history" > "$preliminary_statuses"
 
 codex_review_pending() {
   jq '[.[].body
@@ -182,7 +193,8 @@ gh api --paginate --slurp \
   | jq '[.[].check_runs[]]' > "$final_check_runs"
 gh api --paginate --slurp \
   "repos/$repo_nwo/commits/$head_oid/statuses?per_page=100" \
-  | jq 'flatten' > "$final_statuses"
+  | jq 'flatten' > "$final_status_history"
+jq -f "$status_reducer" "$final_status_history" > "$final_statuses"
 [[ $(jq -r .state "$final_snapshot") == OPEN ]] || {
   printf 'PR is no longer open; stop landing.\n' >&2
   exit 1
