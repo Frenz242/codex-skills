@@ -58,6 +58,7 @@ class SymphonyPolicyTests(unittest.TestCase):
         self.assertIn("final_statuses", land)
         self.assertIn("latest-statuses.jq", land)
         self.assertIn("actionable-feedback.jq", land)
+        self.assertIn('--slurpfile preliminary_reviews "$preliminary_reviews"', land)
         self.assertIn("rules/branches", land)
         self.assertIn("rules/branches/$base_ref", land)
         self.assertIn("/pulls/$pr_number/comments?per_page=100", land)
@@ -79,6 +80,8 @@ class SymphonyPolicyTests(unittest.TestCase):
         self.assertNotIn("pulls/1", land)
         self.assertNotIn("issues/1", land)
         self.assertNotIn("rules/branches/main", land)
+        self.assertLess(land.index('> "$preliminary_reviews"'), land.index("timeout 10m"))
+        self.assertGreaterEqual(land.count("/pulls/$pr_number/reviews?per_page=100"), 2)
         for binding in (
             '--slurpfile final_inline "$final_inline"',
             '--slurpfile final_comments "$final_comments"',
@@ -101,6 +104,7 @@ class SymphonyPolicyTests(unittest.TestCase):
         def count(
             preliminary_inline: list[dict],
             preliminary_comments: list[dict],
+            preliminary_reviews: list[dict],
             final_inline: list[dict],
             final_comments: list[dict],
             final_reviews: list[dict],
@@ -108,6 +112,7 @@ class SymphonyPolicyTests(unittest.TestCase):
             values = {
                 "preliminary_inline": preliminary_inline,
                 "preliminary_comments": preliminary_comments,
+                "preliminary_reviews": preliminary_reviews,
                 "final_inline": final_inline,
                 "final_comments": final_comments,
                 "final_reviews": final_reviews,
@@ -136,9 +141,9 @@ class SymphonyPolicyTests(unittest.TestCase):
                 "submitted_at": "2",
             }
         ]
-        self.assertEqual(count(inline, comments, inline, comments, approved), 0)
-        self.assertEqual(count(inline, comments, inline + [{"id": 3}], comments, approved), 1)
-        self.assertEqual(count(inline, comments, inline, comments + [{"id": 4}], approved), 1)
+        self.assertEqual(count(inline, comments, approved, inline, comments, approved), 0)
+        self.assertEqual(count(inline, comments, approved, inline + [{"id": 3}], comments, approved), 1)
+        self.assertEqual(count(inline, comments, approved, inline, comments + [{"id": 4}], approved), 1)
         changes_requested = approved + [
             {
                 "user": {"login": "reviewer"},
@@ -146,7 +151,7 @@ class SymphonyPolicyTests(unittest.TestCase):
                 "submitted_at": "3",
             }
         ]
-        self.assertEqual(count(inline, comments, inline, comments, changes_requested), 1)
+        self.assertEqual(count(inline, comments, approved, inline, comments, changes_requested), 1)
         request_then_comment = [
             {
                 "user": {"login": "reviewer"},
@@ -159,7 +164,7 @@ class SymphonyPolicyTests(unittest.TestCase):
                 "submitted_at": "2",
             },
         ]
-        self.assertEqual(count(inline, comments, inline, comments, request_then_comment), 1)
+        self.assertEqual(count(inline, comments, [], inline, comments, request_then_comment), 1)
         request_then_approval = request_then_comment + [
             {
                 "user": {"login": "reviewer"},
@@ -167,7 +172,31 @@ class SymphonyPolicyTests(unittest.TestCase):
                 "submitted_at": "3",
             }
         ]
-        self.assertEqual(count(inline, comments, inline, comments, request_then_approval), 0)
+        self.assertEqual(
+            count(inline, comments, request_then_comment, inline, comments, request_then_approval),
+            0,
+        )
+        standalone_review_body = [
+            {
+                "id": 9,
+                "user": {"login": "reviewer"},
+                "state": "COMMENTED",
+                "body": "Please revise",
+                "submitted_at": "4",
+            }
+        ]
+        self.assertEqual(count(inline, comments, [], inline, comments, standalone_review_body), 1)
+        self.assertEqual(
+            count(
+                inline,
+                comments,
+                standalone_review_body,
+                inline,
+                comments,
+                standalone_review_body,
+            ),
+            0,
+        )
 
     def test_commit_status_reducer_keeps_newest_context_state(self) -> None:
         reducer = ROOT / ".codex/skills/land/scripts/latest-statuses.jq"

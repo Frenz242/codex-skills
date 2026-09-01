@@ -41,6 +41,7 @@ set -euo pipefail
 preliminary_snapshot=$(mktemp)
 preliminary_inline=$(mktemp)
 preliminary_comments=$(mktemp)
+preliminary_reviews=$(mktemp)
 preliminary_check_runs=$(mktemp)
 preliminary_status_history=$(mktemp)
 preliminary_statuses=$(mktemp)
@@ -54,7 +55,7 @@ final_status_history=$(mktemp)
 final_statuses=$(mktemp)
 rules_file=$(mktemp)
 rules_error=$(mktemp)
-trap 'rm -f "$preliminary_snapshot" "$preliminary_inline" "$preliminary_comments" "$preliminary_check_runs" "$preliminary_status_history" "$preliminary_statuses" "$review_poll" "$final_snapshot" "$final_inline" "$final_comments" "$final_reviews" "$final_check_runs" "$final_status_history" "$final_statuses" "$rules_file" "$rules_error"' EXIT
+trap 'rm -f "$preliminary_snapshot" "$preliminary_inline" "$preliminary_comments" "$preliminary_reviews" "$preliminary_check_runs" "$preliminary_status_history" "$preliminary_statuses" "$review_poll" "$final_snapshot" "$final_inline" "$final_comments" "$final_reviews" "$final_check_runs" "$final_status_history" "$final_statuses" "$rules_file" "$rules_error"' EXIT
 
 status_reducer=.codex/skills/land/scripts/latest-statuses.jq
 [[ -r $status_reducer ]] || {
@@ -87,6 +88,9 @@ gh api --paginate --slurp \
 gh api --paginate --slurp \
   "repos/$repo_nwo/issues/$pr_number/comments?per_page=100" \
   | jq 'flatten' > "$preliminary_comments"
+gh api --paginate --slurp \
+  "repos/$repo_nwo/pulls/$pr_number/reviews?per_page=100" \
+  | jq 'flatten' > "$preliminary_reviews"
 gh api --paginate --slurp \
   "repos/$repo_nwo/commits/$initial_head/check-runs?per_page=100" \
   | jq '[.[].check_runs[]]' > "$preliminary_check_runs"
@@ -235,6 +239,7 @@ feedback_reducer=.codex/skills/land/scripts/actionable-feedback.jq
 actionable_feedback=$(jq -n \
   --slurpfile preliminary_inline "$preliminary_inline" \
   --slurpfile preliminary_comments "$preliminary_comments" \
+  --slurpfile preliminary_reviews "$preliminary_reviews" \
   --slurpfile final_inline "$final_inline" \
   --slurpfile final_comments "$final_comments" \
   --slurpfile final_reviews "$final_reviews" \
