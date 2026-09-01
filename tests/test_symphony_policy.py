@@ -57,9 +57,12 @@ class SymphonyPolicyTests(unittest.TestCase):
         self.assertIn("final_check_runs", land)
         self.assertIn("final_statuses", land)
         self.assertIn("latest-statuses.jq", land)
+        self.assertIn("actionable-feedback.jq", land)
         self.assertIn("rules/branches", land)
+        self.assertIn("rules/branches/$base_ref", land)
+        self.assertIn("/pulls/$pr_number/comments?per_page=100", land)
         self.assertIn("/issues/$pr_number/comments?per_page=100", land)
-        self.assertIn("/reviews?per_page=100", land)
+        self.assertIn("/pulls/$pr_number/reviews?per_page=100", land)
         self.assertIn("/check-runs?per_page=100", land)
         self.assertIn("/statuses?per_page=100", land)
         self.assertIn('--match-head-commit "$head_oid"', land)
@@ -73,10 +76,77 @@ class SymphonyPolicyTests(unittest.TestCase):
         self.assertIn("pending_checks == 0 && failed_checks == 0 )) || {", land)
         self.assertIn('codex_review_failed "$final_comments"', land)
         self.assertGreaterEqual(land.count("exit 1"), 10)
-        self.assertIn(
-            "final_comments, and final_reviews",
-            land,
+        self.assertNotIn("pulls/1", land)
+        self.assertNotIn("issues/1", land)
+        self.assertNotIn("rules/branches/main", land)
+        for binding in (
+            '--slurpfile final_inline "$final_inline"',
+            '--slurpfile final_comments "$final_comments"',
+            '--slurpfile final_reviews "$final_reviews"',
+            "actionable_feedback == 0",
+        ):
+            self.assertIn(binding, land)
+        self.assertGreater(
+            land.index("actionable_feedback=$(jq -n"),
+            land.index('"repos/$repo_nwo/pulls/$pr_number/reviews?per_page=100"'),
         )
+        self.assertLess(
+            land.index("actionable_feedback == 0"),
+            land.index('gh pr merge "$pr_number"'),
+        )
+
+    def test_actionable_feedback_reducer_uses_every_final_source(self) -> None:
+        reducer = ROOT / ".codex/skills/land/scripts/actionable-feedback.jq"
+
+        def count(
+            preliminary_inline: list[dict],
+            preliminary_comments: list[dict],
+            final_inline: list[dict],
+            final_comments: list[dict],
+            final_reviews: list[dict],
+        ) -> int:
+            values = {
+                "preliminary_inline": preliminary_inline,
+                "preliminary_comments": preliminary_comments,
+                "final_inline": final_inline,
+                "final_comments": final_comments,
+                "final_reviews": final_reviews,
+            }
+            with tempfile.TemporaryDirectory() as directory:
+                arguments = ["jq", "-n"]
+                for name, value in values.items():
+                    path = Path(directory) / f"{name}.json"
+                    path.write_text(json.dumps(value), encoding="utf-8")
+                    arguments.extend(("--slurpfile", name, str(path)))
+                arguments.extend(("-f", str(reducer)))
+                result = subprocess.run(
+                    arguments,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            return int(result.stdout)
+
+        inline = [{"id": 1}]
+        comments = [{"id": 2}]
+        approved = [
+            {
+                "user": {"login": "reviewer"},
+                "state": "APPROVED",
+                "submitted_at": "2",
+            }
+        ]
+        self.assertEqual(count(inline, comments, inline, comments, approved), 0)
+        self.assertEqual(count(inline, comments, inline + [{"id": 3}], comments, approved), 1)
+        self.assertEqual(count(inline, comments, inline, comments + [{"id": 4}], approved), 1)
+        changes_requested = approved + [
+            {
+                "user": {"login": "reviewer"},
+                "state": "CHANGES_REQUESTED",
+                "submitted_at": "3",
+            }
+        ]
+        self.assertEqual(count(inline, comments, inline, comments, changes_requested), 1)
 
     def test_commit_status_reducer_keeps_newest_context_state(self) -> None:
         reducer = ROOT / ".codex/skills/land/scripts/latest-statuses.jq"

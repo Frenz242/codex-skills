@@ -231,8 +231,20 @@ failed_checks=$((
   exit 1
 }
 
-# Evaluate final_snapshot, final_inline, final_comments, and final_reviews for
-# any new actionable feedback.
+feedback_reducer=.codex/skills/land/scripts/actionable-feedback.jq
+actionable_feedback=$(jq -n \
+  --slurpfile preliminary_inline "$preliminary_inline" \
+  --slurpfile preliminary_comments "$preliminary_comments" \
+  --slurpfile final_inline "$final_inline" \
+  --slurpfile final_comments "$final_comments" \
+  --slurpfile final_reviews "$final_reviews" \
+  -f "$feedback_reducer")
+(( actionable_feedback == 0 )) || {
+  printf 'New feedback or a change-requesting review appeared; return to Rework.\n' >&2
+  exit 1
+}
+
+# Semantically inspect the already-present feedback as the final review step.
 # Reconfirm the tracker state is Merging using the targeted tracker operation.
 pr_title=$(jq -r .title "$final_snapshot")
 pr_body=$(jq -r .body "$final_snapshot")
