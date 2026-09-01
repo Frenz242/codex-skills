@@ -147,6 +147,27 @@ class SymphonyPolicyTests(unittest.TestCase):
             }
         ]
         self.assertEqual(count(inline, comments, inline, comments, changes_requested), 1)
+        request_then_comment = [
+            {
+                "user": {"login": "reviewer"},
+                "state": "CHANGES_REQUESTED",
+                "submitted_at": "1",
+            },
+            {
+                "user": {"login": "reviewer"},
+                "state": "COMMENTED",
+                "submitted_at": "2",
+            },
+        ]
+        self.assertEqual(count(inline, comments, inline, comments, request_then_comment), 1)
+        request_then_approval = request_then_comment + [
+            {
+                "user": {"login": "reviewer"},
+                "state": "APPROVED",
+                "submitted_at": "3",
+            }
+        ]
+        self.assertEqual(count(inline, comments, inline, comments, request_then_approval), 0)
 
     def test_commit_status_reducer_keeps_newest_context_state(self) -> None:
         reducer = ROOT / ".codex/skills/land/scripts/latest-statuses.jq"
