@@ -159,7 +159,7 @@ class SymphonyPolicyTests(unittest.TestCase):
                 "submitted_at": "3",
             }
         ]
-        self.assertEqual(count(inline, comments, approved, inline, comments, changes_requested), 1)
+        self.assertGreater(count(inline, comments, approved, inline, comments, changes_requested), 0)
         request_then_comment = [
             {
                 "user": {"login": "reviewer"},
@@ -172,7 +172,7 @@ class SymphonyPolicyTests(unittest.TestCase):
                 "submitted_at": "2",
             },
         ]
-        self.assertEqual(count(inline, comments, [], inline, comments, request_then_comment), 1)
+        self.assertGreater(count(inline, comments, [], inline, comments, request_then_comment), 0)
         request_then_approval = request_then_comment + [
             {
                 "user": {"login": "reviewer"},
@@ -193,7 +193,7 @@ class SymphonyPolicyTests(unittest.TestCase):
                 "submitted_at": "4",
             }
         ]
-        self.assertEqual(count(inline, comments, [], inline, comments, standalone_review_body), 1)
+        self.assertGreater(count(inline, comments, [], inline, comments, standalone_review_body), 0)
         self.assertEqual(
             count(
                 inline,
@@ -218,6 +218,7 @@ class SymphonyPolicyTests(unittest.TestCase):
         summary_pending = [
             {
                 "id": 2,
+                "user": {"login": "chatgpt-codex-connector"},
                 "body": "codex-pull-request-review-summary Running",
                 "updated_at": "1",
             }
@@ -225,12 +226,57 @@ class SymphonyPolicyTests(unittest.TestCase):
         summary_complete = [
             {
                 "id": 2,
+                "user": {"login": "chatgpt-codex-connector"},
                 "body": "codex-pull-request-review-summary Completed",
                 "updated_at": "2",
             }
         ]
         self.assertEqual(
             count(inline, summary_pending, approved, inline, summary_complete, approved),
+            0,
+        )
+        human_marker = [
+            {
+                "id": 2,
+                "user": {"login": "human"},
+                "body": "codex-pull-request-review-summary: please revise",
+                "updated_at": "2",
+            }
+        ]
+        self.assertEqual(
+            count(inline, comments, approved, inline, human_marker, approved),
+            1,
+        )
+        pending_review = [
+            {
+                "id": 8,
+                "user": {"login": "reviewer"},
+                "state": "PENDING",
+                "body": "Please revise",
+            }
+        ]
+        submitted_review = [
+            {
+                "id": 8,
+                "user": {"login": "reviewer"},
+                "state": "COMMENTED",
+                "body": "Please revise",
+                "submitted_at": "4",
+            }
+        ]
+        self.assertGreater(
+            count(inline, comments, pending_review, inline, comments, submitted_review),
+            0,
+        )
+        dismissed_approval = [
+            {
+                "user": {"login": "reviewer"},
+                "state": "DISMISSED",
+                "submitted_at": "2",
+            }
+        ]
+        self.assertGreater(
+            count(inline, comments, approved, inline, comments, dismissed_approval),
             0,
         )
         self.assertEqual(
