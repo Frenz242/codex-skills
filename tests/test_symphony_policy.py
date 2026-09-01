@@ -197,6 +197,16 @@ class SymphonyPolicyTests(unittest.TestCase):
             ),
             0,
         )
+        edited_inline = [{"id": 1, "body": "Please revise", "updated_at": "2"}]
+        self.assertEqual(
+            count(inline, comments, approved, edited_inline, comments, approved),
+            1,
+        )
+        edited_comment = [{"id": 2, "body": "Please revise", "updated_at": "2"}]
+        self.assertEqual(
+            count(inline, comments, approved, inline, edited_comment, approved),
+            1,
+        )
 
     def test_commit_status_reducer_keeps_newest_context_state(self) -> None:
         reducer = ROOT / ".codex/skills/land/scripts/latest-statuses.jq"
