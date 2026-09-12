@@ -11,15 +11,15 @@ Build the inventory after repository/authentication preflight and issue-state re
 - Explicit pull-request list: inspect only those pull requests and their linked issues needed to understand feedback and gates.
 - Parallel lane: stay inside the lane. Report external or other-lane findings and ownership conflicts without claiming their work.
 
-Reading a public or accessible pull request does not authorize mutation. Before editing a branch, replying, resolving a thread, changing draft state, or updating a branch, verify all of:
+This remains an explicitly invoked, manual workflow. Reading a public or accessible pull request does not authorize mutation. Before editing a branch, replying, resolving a thread, changing draft state, or updating a branch, verify all of:
 
 1. the repository and invocation permit the action;
-2. the agent authored the pull request during the current authorized workflow, or the user explicitly authorized changes to that pull request;
-3. no contributor, active claim, branch, pull request, or lane owns overlapping work;
-4. fork permissions and exact head-repository identity are known; and
+2. repository evidence reasonably shows that the pull request is the existing agent-created implementation for the issue or work being processed, including one created by a previous authorized manual run, or the user explicitly authorized changes to that pull request;
+3. no active contributor, agent, claim, or parallel lane conflicts with the work;
+4. the actual head branch is identifiable and writable, and fork permissions and exact head-repository identity are known; and
 5. no security, breaking-change, disclosure, or decision gate requires a human.
 
-Authorship under the same GitHub account is not ownership proof. Unknown permission or ownership means read and report only.
+Creation during the current invocation is not required. Use existing repository evidence such as linked issues, pull-request history, and implementation comments; no persistent ownership or claim system is required. Authorship under the same GitHub account is not ownership proof. Unknown permission or materially ambiguous ownership means read and report only. All existing permission and safety gates still apply.
 
 ## 2. Collect complete review state
 

@@ -4,10 +4,10 @@ Use these fixtures for an independent decision pass against `SKILL.md` and `refe
 
 ## Fixture 1: no ready issue, authorized correctness finding
 
-- Given: no issue has `agent:ready`; an agent-authored open pull request has an unresolved comment demonstrating a regression covered by its issue acceptance criteria.
+- Given: no issue has `agent:ready`; an open pull request created by a previous authorized manual `$process-issues` run is within this invocation's repository/scope. Linked issue and implementation comments reasonably identify it as the existing agent-created implementation; its actual head branch is identifiable and writable, no active contributor, agent, claim, or parallel lane conflicts, and all existing safety gates pass. An unresolved comment demonstrates a regression covered by its issue acceptance criteria.
 - Expected: inventory the pull request, confirm the regression, return it to the correction lifecycle, fix the existing branch, add regression coverage, verify, reply, and resolve only after the fix is pushed and checks pass.
-- Prohibited: skip inventory because no issue is ready; create a competing implementation pull request; resolve before verification.
-- Pass evidence: source finding, correction-pass count, pushed commit, focused regression result, response URL, and resolved-thread readback.
+- Prohibited: skip inventory because no issue is ready; require creation during the current invocation or separate PR-specific authorization despite the qualifying evidence; create a competing implementation pull request; resolve before verification.
+- Pass evidence: prior-run implementation evidence, scope/head/permission/conflict and safety checks, source finding, correction-pass count, pushed commit, focused regression result, response URL, and resolved-thread readback.
 
 ## Fixture 2: nested pagination
 
