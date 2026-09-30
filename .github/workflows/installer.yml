@@ -1,0 +1,31 @@
+name: Skill installer
+on:
+  push:
+    paths: ['install.*', 'scripts/install_skills.py', 'tests/test_installer*', '.github/workflows/installer.yml', '.gitattributes']
+  pull_request:
+    paths: ['install.*', 'scripts/install_skills.py', 'tests/test_installer*', '.github/workflows/installer.yml', '.gitattributes']
+permissions:
+  contents: read
+jobs:
+  installer:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - run: python -m unittest discover -s tests -p test_installer.py -v
+      - name: Windows launcher and WSL dispatch contracts
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          powershell -NoProfile -File tests/test_installer_launcher.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          powershell -NoProfile -File install.ps1 -Target windows --source . --list
+      - name: POSIX launcher
+        if: runner.os != 'Windows'
+        run: sh install.sh --source . --list
