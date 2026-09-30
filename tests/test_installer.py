@@ -1,5 +1,6 @@
 """Behavioral installer tests. Run: python -m unittest discover -s tests -p test_installer.py -v"""
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
@@ -9,7 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,6 +40,131 @@ class InstallerTests(unittest.TestCase):
     def state(self):
         path = next(self.store.glob("state-*.json"))
         return path, json.loads(path.read_text())
+
+    def test_fingerprint_detects_posix_execute_bits(self):
+        # Exercise mode hashing on every host, including Windows, without
+        # pretending Windows chmod provides POSIX execute-bit semantics.
+        root, item = Mock(), Mock()
+        root.rglob.return_value = [item]
+        item.relative_to.return_value.as_posix.return_value = "launcher.sh"
+        item.read_bytes.return_value = b"#!/bin/sh\nexit 0\n"
+        with patch.object(m, "is_link", return_value=False), patch.object(m.os, "name", "posix"):
+            item.stat.return_value.st_mode = 0o100755
+            executable = m.fingerprint(root)
+            for mode in (0o100655, 0o100745, 0o100754, 0o100644):
+                item.stat.return_value.st_mode = mode
+                self.assertNotEqual(m.fingerprint(root), executable)
+            item.stat.return_value.st_mode = 0o100555
+            self.assertEqual(m.fingerprint(root), executable)
+
+    def test_windows_fingerprint_ignores_execute_bits(self):
+        root, item = Mock(), Mock()
+        root.rglob.return_value = [item]
+        item.relative_to.return_value.as_posix.return_value = "launcher.sh"
+        item.read_bytes.return_value = b"#!/bin/sh\nexit 0\n"
+        with patch.object(m, "is_link", return_value=False), patch.object(m.os, "name", "nt"):
+            item.stat.return_value.st_mode = 0o100755
+            executable = m.fingerprint(root)
+            item.stat.return_value.st_mode = 0o100644
+            self.assertEqual(m.fingerprint(root), executable)
+
+    def make_launcher(self, skill="alpha", mode=0o755):
+        launcher = self.source / skill / "launcher.sh"
+        launcher.write_text("#!/bin/sh\nprintf 'launcher works\\n'\n")
+        launcher.chmod(mode)
+        return launcher
+
+    def use_legacy_state(self):
+        # Recreate the shipped v1 algorithm independently of production helpers.
+        def old_fingerprint(path):
+            digest = hashlib.sha256()
+            for item in sorted(path.rglob("*")):
+                if item.is_file():
+                    digest.update(item.relative_to(path).as_posix().encode() + b"\0")
+                    digest.update(hashlib.sha256(item.read_bytes()).digest())
+            return digest.hexdigest()
+        path, state = self.state()
+        for name, entry in state.items():
+            root = Path(entry["target"]).parent
+            parts = [old_fingerprint(root / name)]
+            if name != "improve-skills":
+                parts.append(old_fingerprint(root / "improve-skills"))
+            entry["hash"] = hashlib.sha256("".join(parts).encode()).hexdigest()
+            entry.pop("fingerprint_version", None)
+        path.write_text(json.dumps(state))
+        return path, state
+
+    @unittest.skipIf(os.name == "nt", "requires actual POSIX execute permissions")
+    def test_managed_mode_damage_and_shared_helper_are_conflicts(self):
+        self.make_launcher()
+        self.make_launcher("improve-skills")
+        self.assertEqual(self.run_cli("--skills", "alpha").returncode, 0)
+        target = (self.dest / "alpha").resolve()
+        for launcher in (target / "launcher.sh", target.parent / "improve-skills/launcher.sh"):
+            with self.subTest(launcher=launcher):
+                launcher.chmod(0o644)
+                with self.assertRaises(PermissionError):
+                    subprocess.run([str(launcher)], check=True, capture_output=True)
+                self.assertIn("conflict: modified managed files", self.run_cli("--list").stdout)
+                result = self.run_cli("--skills", "alpha", "--adopt")
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertEqual((self.dest / "alpha").resolve(), target)
+                self.assertEqual(launcher.stat().st_mode & 0o111, 0)
+                launcher.chmod(0o755)
+        self.assertNotIn("conflict", self.run_cli("--list").stdout)
+
+    @unittest.skipIf(os.name == "nt", "requires actual POSIX execute permissions")
+    def test_upstream_mode_only_update_installs_executable_launcher(self):
+        launcher = self.make_launcher(mode=0o644)
+        self.assertEqual(self.run_cli("--skills", "alpha").returncode, 0)
+        launcher.chmod(0o755)
+        self.assertIn("update available", self.run_cli("--list").stdout)
+        result = self.run_cli("--skills", "alpha")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        result = subprocess.run([str(self.dest / "alpha/launcher.sh")], check=True, capture_output=True, text=True)
+        self.assertEqual(result.stdout, "launcher works\n")
+        self.assertNotIn("update available", self.run_cli("--list").stdout)
+
+    def test_legacy_state_migrates_without_false_content_conflict(self):
+        self.make_launcher("improve-skills")
+        self.assertEqual(self.run_cli("--skills", "alpha").returncode, 0)
+        target = (self.dest / "alpha").resolve()
+        if os.name != "nt":
+            # Legacy hashes cannot see this damage; migration must use upstream
+            # permissions, not record the damaged file as the new baseline.
+            (target.parent / "improve-skills/launcher.sh").chmod(0o644)
+        path, state = self.use_legacy_state()
+        result = self.run_cli("--list")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("conflict", result.stdout)
+        self.assertEqual(json.loads(path.read_text()), state)  # --list is read-only.
+        if os.name == "nt":
+            self.assertNotIn("update available", result.stdout)
+        else:
+            self.assertIn("update available", result.stdout)
+        result = self.run_cli("--skills", "alpha")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        if os.name != "nt":
+            _, migrated = self.state()
+            self.assertEqual(migrated["alpha"]["fingerprint_version"], 2)
+            new_target = (self.dest / "alpha").resolve()
+            self.assertNotEqual(new_target, target)
+            launcher = new_target.parent / "improve-skills/launcher.sh"
+            self.assertEqual(launcher.stat().st_mode & 0o111, 0o111)
+            self.assertEqual((target.parent / "improve-skills/launcher.sh").stat().st_mode & 0o111, 0)
+            self.assertEqual(subprocess.run([str(launcher)], check=True, capture_output=True, text=True).stdout,
+                             "launcher works\n")
+            self.assertIn("Previous installation preserved", result.stdout)
+        self.assertNotIn("update available", self.run_cli("--list").stdout)
+
+    def test_legacy_state_still_protects_content_edits(self):
+        self.assertEqual(self.run_cli("--skills", "alpha").returncode, 0)
+        self.use_legacy_state()
+        (self.dest / "alpha/SKILL.md").write_text("local edit")
+        result = self.run_cli("--skills", "alpha", "--adopt")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("modified managed files", result.stderr)
+        self.assertEqual((self.dest / "alpha/SKILL.md").read_text(), "local edit")
 
     def test_install_update_current_and_preserve_unselected(self):
         first = self.run_cli("--skills", "alpha", "beta")
