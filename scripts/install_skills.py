@@ -4,22 +4,31 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path, PurePosixPath
 import platform
+import queue
 import re
 import shutil
 import stat
 import subprocess
 import sys
 import tempfile
+import threading
+import time
+import urllib.error
 import urllib.request
 import uuid
 import zipfile
 
 REPOSITORY = "Frenz242/codex-skills"
 NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
+DOWNLOAD_TIMEOUT = 60
+SOCKET_TIMEOUT = 15
+PROGRESS_INTERVAL = 5
+DOWNLOAD_ATTEMPTS = 2
 
 
 def lexists(path):
@@ -63,10 +72,66 @@ def effective_hash(root, name, *, include_modes=True):
     return hashlib.sha256("".join(parts).encode()).hexdigest()
 
 
-def download(url):
+def download_attempt(url):
+    """Bound the entire request, including DNS, headers and a trickling body."""
     request = urllib.request.Request(url, headers={"User-Agent": "codex-skills-installer"})
-    with urllib.request.urlopen(request, timeout=60) as response:
-        return response.read()
+    result = queue.Queue(maxsize=1)
+    cancelled = threading.Event()
+
+    def receive():
+        # Network workers never touch files or installation state. A daemon lets
+        # timeout/Ctrl+C return even if the OS resolver or a read is still stuck.
+        try:
+            with urllib.request.urlopen(request, timeout=SOCKET_TIMEOUT) as response:
+                data = bytearray()
+                while not cancelled.is_set():
+                    chunk = response.read1(64 * 1024)
+                    if not chunk:
+                        length = response.headers.get("Content-Length")
+                        if length is not None and len(data) != int(length):
+                            raise OSError("Incomplete download (Content-Length mismatch)")
+                        result.put(bytes(data))
+                        return
+                    data.extend(chunk)
+        except Exception as error:
+            result.put(error)
+
+    started = time.monotonic()
+    threading.Thread(target=receive, daemon=True).start()
+    try:
+        while True:
+            remaining = DOWNLOAD_TIMEOUT - (time.monotonic() - started)
+            if remaining <= 0:
+                raise TimeoutError(f"download exceeded {DOWNLOAD_TIMEOUT:g} seconds")
+            try:
+                value = result.get(timeout=min(PROGRESS_INTERVAL, remaining))
+            except queue.Empty:
+                print(f"  Still downloading ({time.monotonic() - started:.0f}s elapsed)...",
+                      flush=True)
+                continue
+            if isinstance(value, Exception):
+                raise value
+            return value
+    finally:
+        cancelled.set()
+
+
+def download(url):
+    for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
+        print(f"Downloading {url} (attempt {attempt}/{DOWNLOAD_ATTEMPTS}; "
+              f"{DOWNLOAD_TIMEOUT:g}s limit)...", flush=True)
+        try:
+            return download_attempt(url)
+        except (OSError, http.client.HTTPException) as error:
+            # Permanent HTTP errors (including API rate limits) need user action.
+            retryable = not isinstance(error, urllib.error.HTTPError) or error.code in (408, 500, 502, 503, 504)
+            if isinstance(error, urllib.error.HTTPError):
+                error.close()
+            if attempt == DOWNLOAD_ATTEMPTS or not retryable:
+                raise OSError(f"Could not download {url}: {error}. "
+                              "Check your connection and rerun the installer; "
+                              "installed skills have not been changed.") from error
+            print(f"  Download failed: {error}. Retrying...", flush=True)
 
 
 def fetch_main(destination):
@@ -311,6 +376,9 @@ def main(argv=None):
 if __name__ == "__main__":
     try:
         sys.exit(main())
+    except KeyboardInterrupt:
+        print("\nInstaller cancelled.", file=sys.stderr)
+        sys.exit(130)
     except (OSError, ValueError, subprocess.SubprocessError, EOFError) as error:
         print(f"Installer stopped: {error}", file=sys.stderr)
         if isinstance(error, subprocess.CalledProcessError) and error.stderr:

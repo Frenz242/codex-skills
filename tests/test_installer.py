@@ -1,6 +1,8 @@
 """Behavioral installer tests. Run: python -m unittest discover -s tests -p test_installer.py -v"""
 import contextlib
 import hashlib
+import http.client
+import http.server
 import importlib.util
 import io
 import json
@@ -9,7 +11,10 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
+import urllib.error
 from unittest.mock import Mock, patch
 import zipfile
 
@@ -17,6 +22,131 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("installer", ROOT / "scripts/install_skills.py")
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
+
+
+class DownloadTests(unittest.TestCase):
+    @contextlib.contextmanager
+    def server(self, body):
+        release = threading.Event()
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                body(self, release)
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01})
+        thread.start()
+        try:
+            yield f"http://127.0.0.1:{server.server_port}/archive.zip"
+        finally:
+            release.set()
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    def test_download_chunked_body(self):
+        def body(handler, release):
+            handler.send_header("Transfer-Encoding", "chunked")
+            handler.end_headers()
+            handler.wfile.write(b"3\r\none\r\n3\r\ntwo\r\n0\r\n\r\n")
+
+        output = io.StringIO()
+        with self.server(body) as url, contextlib.redirect_stdout(output):
+            self.assertEqual(m.download(url), b"onetwo")
+        self.assertIn("attempt 1/2", output.getvalue())
+
+    def test_stalled_and_trickling_bodies_have_overall_deadline(self):
+        for trickle in (False, True):
+            def body(handler, release):
+                handler.send_header("Transfer-Encoding", "chunked")
+                handler.end_headers()
+                while not release.wait(0.01):
+                    if trickle:
+                        try:
+                            handler.wfile.write(b"1\r\nx\r\n")
+                            handler.wfile.flush()
+                        except OSError:
+                            return
+
+            output = io.StringIO()
+            with self.subTest(trickle=trickle), self.server(body) as url, \
+                    patch.object(m, "DOWNLOAD_TIMEOUT", 0.15), \
+                    patch.object(m, "PROGRESS_INTERVAL", 0.03), contextlib.redirect_stdout(output):
+                started = time.monotonic()
+                with self.assertRaisesRegex(OSError, "installed skills have not been changed"):
+                    m.download(url)
+                self.assertLess(time.monotonic() - started, 2)
+            self.assertIn("Still downloading", output.getvalue())
+            self.assertIn("attempt 2/2", output.getvalue())
+            self.assertIn("download exceeded", output.getvalue())
+
+    def test_connection_setup_has_overall_deadline(self):
+        release, finished = threading.Event(), threading.Event()
+
+        def connect(*args, **kwargs):
+            release.wait(2)
+            finished.set()
+            raise OSError("connection stopped")
+
+        try:
+            with patch.object(m.urllib.request, "urlopen", side_effect=connect), \
+                    patch.object(m, "DOWNLOAD_TIMEOUT", 0.05):
+                started = time.monotonic()
+                with self.assertRaises(TimeoutError):
+                    m.download_attempt("https://example.invalid/archive.zip")
+                self.assertLess(time.monotonic() - started, 1)
+        finally:
+            release.set()
+            self.assertTrue(finished.wait(2))
+
+    def test_incomplete_content_length_is_rejected(self):
+        def body(handler, release):
+            handler.send_header("Content-Length", "100")
+            handler.end_headers()
+            handler.wfile.write(b"partial")
+
+        with self.server(body) as url:
+            with self.assertRaisesRegex(OSError, "Incomplete download"):
+                m.download_attempt(url)
+
+    def test_transient_errors_retry_then_return_complete_response(self):
+        url = "https://example.invalid/archive.zip"
+        for error in (TimeoutError("stalled"), urllib.error.URLError("offline"),
+                      http.client.IncompleteRead(b"partial"),
+                      urllib.error.HTTPError(url, 503, "unavailable", {}, None)):
+            with self.subTest(error=error), \
+                    patch.object(m, "download_attempt", side_effect=[error, b"complete"]) as attempt, \
+                    contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(m.download(url), b"complete")
+                self.assertEqual(attempt.call_count, 2)
+
+    def test_permanent_http_errors_do_not_retry(self):
+        url = "https://example.invalid/archive.zip"
+        for code in (403, 404, 429):
+            error = urllib.error.HTTPError(url, code, "refused", {}, None)
+            with self.subTest(code=code), \
+                    patch.object(m, "download_attempt", side_effect=error) as attempt, \
+                    contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaisesRegex(OSError, str(code)):
+                    m.download(url)
+                self.assertEqual(attempt.call_count, 1)
+
+    def test_ctrl_c_exits_cleanly_without_retry(self):
+        # Interrupt the main thread at its queue wait, as terminal SIGINT would.
+        code = ("import runpy\nfrom unittest.mock import patch\n"
+                "with patch('queue.Queue.get', side_effect=KeyboardInterrupt), "
+                "patch('urllib.request.urlopen'):\n"
+                f"    runpy.run_path({str(ROOT / 'scripts/install_skills.py')!r}, run_name='__main__')")
+        result = subprocess.run([sys.executable, "-c", code, "--list"],
+                                capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 130, result.stderr)
+        self.assertIn("Installer cancelled", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertNotIn("attempt 2/2", result.stdout)
 
 
 class InstallerTests(unittest.TestCase):
@@ -248,10 +378,15 @@ class InstallerTests(unittest.TestCase):
     def test_source_failure_preserves_installation(self):
         self.assertEqual(self.run_cli("--skills", "alpha").returncode, 0)
         old_target = (self.dest / "alpha").resolve()
-        with patch.object(m, "fetch_main", side_effect=OSError("offline")), contextlib.redirect_stdout(io.StringIO()):
+        state_path, _ = self.state()
+        old_state = state_path.read_bytes()
+        with patch.object(m.urllib.request, "urlopen", side_effect=TimeoutError("stalled")), \
+                contextlib.redirect_stdout(io.StringIO()):
             with self.assertRaises(OSError):
                 m.main(["--dest", str(self.dest), "--store", str(self.store), "--skills", "alpha"])
         self.assertEqual((self.dest / "alpha").resolve(), old_target)
+        self.assertEqual(state_path.read_bytes(), old_state)
+        self.assertFalse((self.store / "install.lock").exists())
 
     def test_archive_validation_and_commit_pinning(self):
         sha = "a" * 40
