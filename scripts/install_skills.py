@@ -32,8 +32,12 @@ def is_link(path):
     )
 
 
-def fingerprint(path):
-    """Hash names and bytes, rejecting links within downloaded/managed content."""
+def fingerprint(path, *, include_modes=True):
+    """Hash names, bytes and POSIX execute bits; reject embedded links.
+
+    include_modes=False is only for verifying pre-v2 installation state.
+    Windows does not expose POSIX execute permissions, so its hash is unchanged.
+    """
     digest = hashlib.sha256()
     for item in sorted(path.rglob("*")):
         if is_link(item):
@@ -41,6 +45,8 @@ def fingerprint(path):
         if item.is_file():
             digest.update(item.relative_to(path).as_posix().encode() + b"\0")
             digest.update(hashlib.sha256(item.read_bytes()).digest())
+            if include_modes and os.name != "nt":
+                digest.update(bytes([item.stat().st_mode & 0o111]))
     return digest.hexdigest()
 
 
@@ -49,11 +55,11 @@ def catalog(root):
                   if NAME.fullmatch(p.name) and p.is_dir() and (p / "SKILL.md").is_file())
 
 
-def effective_hash(root, name):
+def effective_hash(root, name, *, include_modes=True):
     # These skills call a sibling recorder. Keep its version with the skill.
-    parts = [fingerprint(root / name)]
+    parts = [fingerprint(root / name, include_modes=include_modes)]
     if name != "improve-skills" and (root / "improve-skills" / "SKILL.md").is_file():
-        parts.append(fingerprint(root / "improve-skills"))
+        parts.append(fingerprint(root / "improve-skills", include_modes=include_modes))
     return hashlib.sha256("".join(parts).encode()).hexdigest()
 
 
@@ -146,12 +152,19 @@ def status(name, source, destination, state):
     if entry and is_link(destination) and str(destination.resolve()) == entry["target"]:
         if not destination.is_dir():
             return "conflict: broken managed link"
+        version = entry.get("fingerprint_version", 1)
+        if version not in (1, 2):
+            return "conflict: unsupported fingerprint version"
         try:
-            current = effective_hash(destination.resolve().parent, name)
+            current = effective_hash(destination.resolve().parent, name, include_modes=version == 2)
         except (OSError, ValueError):
             return "conflict: modified managed files"
         if current != entry["hash"]:
             return "conflict: modified managed files"
+        if version == 1 and os.name != "nt":
+            # Old state cannot prove the original permissions. Refresh selected
+            # installations from upstream with a backup, never bless local modes.
+            return "update available"
         return "current" if current == effective_hash(source, name) else "update available"
     if destination.is_dir():
         try:
@@ -191,7 +204,8 @@ def install(name, source, destination, store, state, state_path, adopt=False):
             backup.parent.mkdir(parents=True)
             os.rename(destination, backup)
         os.rename(replacement, destination)
-        state[name] = {"target": str(target.resolve()), "hash": effective_hash(bundle, name)}
+        state[name] = {"target": str(target.resolve()), "hash": effective_hash(bundle, name),
+                       "fingerprint_version": 2}
         save_state(state_path, state)
     except BaseException:
         if lexists(destination) and is_link(destination) and destination.resolve() == target.resolve():
