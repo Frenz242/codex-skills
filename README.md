@@ -8,42 +8,91 @@ This repository contains reusable Codex skills that provide repeatable workflows
 
 ## Installation
 
-Codex user-level skills are stored under the `.agents/skills` directory in your user profile:
+Use the menu-driven installer to install or update selected skills from the current GitHub `main`. It supports Windows, macOS, Linux, and WSL. It downloads a commit-pinned snapshot; Git is not required, and it never checks out, pulls, or resets your development repository.
 
-**Windows**
+### New machine
 
-```text
-%USERPROFILE%\.agents\skills
-```
+1. Install Codex and Python 3.10 or newer (the installer also detects Codex's bundled Python runtime when available).
+2. [Download this repository's main ZIP](https://github.com/Frenz242/codex-skills/archive/refs/heads/main.zip), extract it, and open a terminal in the extracted folder. You can also use an existing clone; on Windows, make initial clones from your normal user account, not a Codex sandbox account.
+3. Run the appropriate launcher as your normal user:
 
-**macOS / Linux**
-
-```text
-~/.agents/skills
-```
-
-If that directory does not already contain skills you need to preserve, you can clone this repository directly into it.
-
-**PowerShell**
+**Windows PowerShell**
 
 ```powershell
-git clone https://github.com/Frenz242/codex-skills.git "$env:USERPROFILE\.agents\skills"
+powershell -NoProfile -File .\install.ps1
 ```
 
-**macOS / Linux**
+**macOS / Linux / inside WSL**
 
-```bash
-git clone https://github.com/Frenz242/codex-skills.git ~/.agents/skills
+```sh
+sh ./install.sh
 ```
 
-If you already keep other skills in that directory, clone this repository somewhere else and copy or link only the skill directories you want to install. Keep each skill's `SKILL.md` and supporting files together.
+Windows first offers native Windows and registered WSL distributions. Selecting a distribution runs the installer as its default Linux user, using that user's Python and home directory; Windows Python is not required for this route. The extracted installer must be accessible through `wslpath`. You can instead extract and run `install.sh` inside WSL. Installing into both Windows and WSL requires one run for each target.
 
-### Prerequisites
+The installer reports the OS, Codex executable when on PATH, Codex home (`CODEX_HOME` or `~/.codex`), and common desktop installation evidence. A fresh machine without detectable Codex can still prepare its user skills. Detection is evidence, not proof that every installed Codex edition is running or configured; shell-only PATH changes and custom homes must be supplied in the environment used to launch the installer.
 
-- OpenAI Codex with skills support.
-- Git for cloning and updating the repository.
-- GitHub CLI (`gh`) and GitHub authentication for skills that operate on GitHub issues, branches, or pull requests.
-- Python 3.10 or newer for the local `improve-skills` evidence-store helper. Its shared launcher discovers bundled and standard installations.
+### Select skills and update
+
+The menu shows `not installed`, `current`, `update available`, `unmanaged`, or `conflict`. Enter numbers or names separated by commas, `a` for all, `u` for available managed updates, or `q` to quit. Invalid selections are rejected. Rerun the same launcher to check GitHub `main` again and update selected skills. Download a fresh repository ZIP when you want a newer version of the installer itself.
+
+Selecting a workflow skill also includes `improve-skills`, its shared observation helper. The menu explains this dependency before installation. Other unselected skills retain their existing versions. Supporting sibling resources stay with each installed version.
+
+### Locations and overrides
+
+The default destination is `$HOME/.agents/skills` (`%USERPROFILE%\.agents\skills` on Windows), the documented [Codex user skill location](https://learn.chatgpt.com/docs/build-skills). It is independent of where the Codex executable is installed. `CODEX_HOME` changes Codex home detection, not this standard skill destination. An existing `$CODEX_HOME/skills` directory is reported; target it explicitly only if your Codex installation uses that location. The installer does not create duplicate links in both locations automatically.
+
+Managed bundles and state live under `~/.agents/codex-skills-installer`. Windows uses directory junctions, which normally do not require administrator rights or Developer Mode; macOS/Linux/WSL use directory symlinks. Each selected skill points at its own versioned bundle, preserving sibling resources. Do not edit or delete active bundles. Old bundles and previous installations are retained for recovery; automatic garbage collection is intentionally excluded.
+
+```powershell
+# Read-only check (downloads main but does not change installed skills).
+powershell -NoProfile -File .\install.ps1 -Target windows --list
+# Noninteractive skill selection; custom paths may contain spaces.
+powershell -NoProfile -File .\install.ps1 -Target windows --skills process-issues sync-after-merge
+# All paths forwarded to WSL must be Linux paths.
+powershell -NoProfile -File .\install.ps1 -Target Ubuntu --dest /home/me/.agents/skills --list
+```
+
+```sh
+sh ./install.sh --list
+sh ./install.sh --skills process-issues sync-after-merge
+sh ./install.sh --dest "$HOME/custom-skills" --store "$HOME/custom-skill-store"
+```
+
+Set `CODEX_SKILL_PYTHON` to an explicit Python executable if runtime discovery fails. The store must stay outside the skill discovery directory. Use the same `--store` on later runs to retain installation ownership records. Each destination has separate state. Network failures stop the check without replacing installed skills; GitHub's unauthenticated API rate limit may require retrying later.
+
+### Existing installations and recovery
+
+Existing copies, junctions, and symlinks are compared to upstream but treated as unmanaged until explicitly adopted. The interactive menu asks before backing up and replacing an intact unmanaged installation. Noninteractive runs require `--adopt`:
+
+```sh
+sh ./install.sh --skills process-issues --adopt
+```
+
+Backups go into `.codex-skills-backups` beside the destination's parent skill directory, outside Codex discovery (for the default destination: `~/.agents/.codex-skills-backups/<id>/<skill>`). Renaming an existing link preserves its original target and checkout. Existing ordinary directories are preserved in full. Ordinary directories inside a Git checkout cannot be adopted; use a separate destination so tracked files stay intact. Managed files with local edits, broken links, and unexpected file conflicts are refused even with `--adopt`; preserve or relocate those manually before retrying. Files generated inside a managed bundle also count as modifications.
+
+If a normal installation error occurs after replacement begins, the installer restores the previous link/directory. A forced process kill or power loss can leave `install.lock`, temporary links, or a backup requiring manual recovery. After confirming no installer is running, inspect the printed destination/store and backups before removing a stale lock. To roll back manually, remove only the new skill link and move the saved backup back to its original name; never recursively delete a junction target. Reinstall/adopt afterward to reconcile state. Restart Codex if skills do not appear.
+
+### Prerequisites for skill use
+
+- Codex with skills support and Python 3.10+ for installation and the evidence-store helper.
+- Git and authenticated GitHub CLI (`gh`) for the repository workflow skills.
+- Internet access to `api.github.com` and `codeload.github.com` for installation/update checks.
+- Native Windows installation uses Windows PowerShell 5.1 or newer. WSL needs Python 3.10+ inside the selected distribution.
+
+### Installer validation
+
+```sh
+python -m unittest discover -s tests -p test_installer.py -v
+sh install.sh --source . --list
+```
+
+```powershell
+powershell -NoProfile -File tests/test_installer_launcher.ps1
+powershell -NoProfile -File install.ps1 -Target windows --source . --list
+```
+
+`--source` is an explicit offline/development override and does not check GitHub `main`. Tests use disposable destinations and synthetic content; CI runs the Python behavior suite on Windows, macOS, and Linux. WSL launcher tests simulate enumeration and dispatch, so a live WSL install remains a separate platform smoke check.
 
 ## Usage
 
