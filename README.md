@@ -8,33 +8,57 @@ This repository contains reusable Codex skills that provide repeatable workflows
 
 ## Installation
 
-Use the menu-driven installer to install or update selected skills from the current GitHub `main`. It supports Windows, macOS, Linux, and WSL. It downloads a commit-pinned snapshot; Git is not required, and it never checks out, pulls, or resets your development repository.
+Use Git to download and update the installer, then use its menu to install or update selected skills from the current GitHub `main`. The installer supports Windows, macOS, Linux, and WSL. It downloads managed skill snapshots separately from your clone.
 
 ### New machine
 
-1. Install Codex and Python 3.10 or newer (the installer also detects Codex's bundled Python runtime when available).
-2. [Download this repository's main ZIP](https://github.com/Frenz242/codex-skills/archive/refs/heads/main.zip), extract it, and open a terminal in the extracted folder. You can also use an existing clone; on Windows, make initial clones from your normal user account, not a Codex sandbox account.
-3. Run the appropriate launcher as your normal user:
+1. Install Git, Codex, and Python 3.10 or newer (the installer also detects Codex's bundled Python runtime when available).
+2. Open a terminal in the parent folder where you want to keep the `codex-skills` clone, such as your projects folder. Keep the clone outside your `.agents/skills` directory. On Windows, perform the initial clone from your normal user account, not a Codex sandbox account.
+3. Clone `main`, enter the repository folder, and run the appropriate launcher:
 
 **Windows PowerShell**
 
 ```powershell
+git clone --branch main https://github.com/Frenz242/codex-skills.git
+cd codex-skills
 powershell -NoProfile -File .\install.ps1
 ```
 
 **macOS / Linux / inside WSL**
 
 ```sh
+git clone --branch main https://github.com/Frenz242/codex-skills.git
+cd codex-skills
 sh ./install.sh
 ```
 
-Windows first offers native Windows and registered WSL distributions. Selecting a distribution runs the installer as its default Linux user, using that user's Python and home directory; Windows Python is not required for this route. The extracted installer must be accessible through `wslpath`. You can instead extract and run `install.sh` inside WSL. Installing into both Windows and WSL requires one run for each target.
+If you already have a clone, open a terminal in it and follow the update instructions below.
+
+Windows first offers native Windows and registered WSL distributions. Selecting a distribution runs the installer as its default Linux user, using that user's Python and home directory; Windows Python is not required for this route. The Windows clone must be accessible through `wslpath`. You can instead clone the repository and run `install.sh` inside WSL. Installing into both Windows and WSL requires one run for each target.
 
 The installer reports the OS, Codex executable when on PATH, Codex home (`CODEX_HOME` or `~/.codex`), and common desktop installation evidence. A fresh machine without detectable Codex can still prepare its user skills. Detection is evidence, not proof that every installed Codex edition is running or configured; shell-only PATH changes and custom homes must be supplied in the environment used to launch the installer.
 
 ### Select skills and update
 
-The menu shows `not installed`, `current`, `update available`, `unmanaged`, or `conflict`. Enter numbers or names separated by commas, `a` for all, `u` for available managed updates, or `q` to quit. Invalid selections are rejected. Rerun the same launcher to check GitHub `main` again and update selected skills. Download a fresh repository ZIP when you want a newer version of the installer itself.
+The menu shows `not installed`, `current`, `update available`, `unmanaged`, or `conflict`. Enter numbers or names separated by commas, `a` for all, `u` for available managed updates, or `q` to quit. Invalid selections are rejected. Rerun the same launcher to check GitHub `main` again and update selected skills.
+
+To update the installer itself as well, open a terminal inside your `codex-skills` clone on `main`, pull the latest version, then run it:
+
+**Windows PowerShell**
+
+```powershell
+git pull --ff-only
+powershell -NoProfile -File .\install.ps1
+```
+
+**macOS / Linux / inside WSL**
+
+```sh
+git pull --ff-only
+sh ./install.sh
+```
+
+The pull updates your local installer checkout. The menu then lets you choose which managed skills to install or update.
 
 Selecting a workflow skill also includes `improve-skills`, its shared observation helper. The menu explains this dependency before installation. Other unselected skills retain their existing versions. Supporting sibling resources stay with each installed version.
 
@@ -71,15 +95,15 @@ sh ./install.sh --skills process-issues --adopt
 
 Backups go into `.codex-skills-backups` beside the destination's parent skill directory, outside Codex discovery (for the default destination: `~/.agents/.codex-skills-backups/<id>/<skill>`). Renaming an existing link preserves its original target and checkout. Existing ordinary directories are preserved in full. Ordinary directories inside a Git checkout cannot be adopted; use a separate destination so tracked files stay intact. Managed files with local edits, broken links, and unexpected file conflicts are refused even with `--adopt`; preserve or relocate those manually before retrying. Files generated inside a managed bundle also count as modifications. On POSIX, owner/group/other executable-bit changes also count as modifications; they are reported as conflicts rather than silently overwritten. Other permission bits are not part of this check. Windows fingerprints continue to compare names and contents only.
 
-Installations created before executable-bit tracking used unversioned, content-only fingerprints. On POSIX, the updated installer verifies their content first and lists intact legacy installations as `update available` for a one-time refresh. Selecting an update installs current upstream files and permissions, preserves the old bundle/link as a backup, and records the new fingerprint version. It does not accept existing local modes as a trusted baseline. Content edits still block migration. A read-only `--list` does not change state, and legacy Windows installations need no refresh solely for this change. Download the latest installer ZIP to get this behavior.
+Installations created before executable-bit tracking used unversioned, content-only fingerprints. On POSIX, the updated installer verifies their content first and lists intact legacy installations as `update available` for a one-time refresh. Selecting an update installs current upstream files and permissions, preserves the old bundle/link as a backup, and records the new fingerprint version. It does not accept existing local modes as a trusted baseline. Content edits still block migration. A read-only `--list` does not change state, and legacy Windows installations need no refresh solely for this change. Run `git pull --ff-only` in your installer clone on `main` to get this behavior.
 
 If a normal installation error occurs after replacement begins, the installer restores the previous link/directory. A forced process kill or power loss can leave `install.lock`, temporary links, or a backup requiring manual recovery. After confirming no installer is running, inspect the printed destination/store and backups before removing a stale lock. To roll back manually, remove only the new skill link and move the saved backup back to its original name; never recursively delete a junction target. Reinstall/adopt afterward to reconcile state. Restart Codex if skills do not appear.
 
 ### Prerequisites for skill use
 
 - Codex with skills support and Python 3.10+ for installation and the evidence-store helper.
-- Git and authenticated GitHub CLI (`gh`) for the repository workflow skills.
-- Internet access to `api.github.com` and `codeload.github.com` for installation/update checks.
+- Git for cloning/updating the installer and for repository workflow skills; authenticated GitHub CLI (`gh`) for skills that interact with GitHub.
+- Internet access to `github.com` for Git cloning/pulling, and to `api.github.com` and `codeload.github.com` for installation/update checks.
 - Native Windows installation uses Windows PowerShell 5.1 or newer. WSL needs Python 3.10+ inside the selected distribution.
 
 ### Installer validation
