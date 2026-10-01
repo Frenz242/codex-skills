@@ -12,6 +12,7 @@ State: verified | not applicable | not verified
 Automated evidence: <test/build/static command and result, or none>
 Runtime evidence: <real changed path, representative input, and observed result, or reason>
 Output review: <artifact/behavior inspected and semantic or visual finding, or reason>
+Delivery evidence: <for a local artifact, durable destination, intended-user access check, and integrity result, or reason>
 Limitation: <remaining blocker or human action, if any>
 ```
 
@@ -43,6 +44,19 @@ Match inspection to the artifact and issue:
 
 For output-sensitive changes, compare with a default-branch baseline when it helps distinguish the intended change from accidental drift. Record the changed region and at least one relevant unaffected region when the issue calls for preserving adjacent output.
 
+## Local artifact delivery and user access
+
+Treat delivery as a separate acceptance step from generating or reviewing a local artifact. Agent access, file existence, a successful render, and a clickable absolute link do not prove that the interactive user can open the result.
+
+- Keep private scratch directories private. Publish the final artifact to an approved, persistent, ignored handoff location instead of presenting a protected temporary path as the result.
+- Prefer creating the destination normally in a location already intended for user handoff. When repairing an existing handoff is necessary, grant access only to the verified intended user and only on the narrow path required.
+- Preserve the source artifact and compare a cryptographic hash before and after copying. Keep customer or other private content out of tracked files, GitHub evidence, and observation records.
+- Verify every parent directory can be traversed and the final file can be read by the intended user. When a reliable check cannot run in that user's context, record delivery access as `not verified`; ACL or mode inspection alone does not prove the user opened the artifact.
+- On Windows, distinguish the sandbox account from the interactive user. Inspect protected ACLs, disabled inheritance, and explicit deny entries as well as apparent allow entries. Do not grant `Everyone` or `Users`, recursively change a workspace ACL, take ownership of Git metadata, or add a Git `safe.directory` exception as an access workaround.
+- On POSIX, verify execute permission on each parent directory and read permission on the final file for the intended user or group. Do not relax a private scratch directory merely to make its final artifact deliverable; copy the result to the approved destination with appropriately scoped ownership and modes.
+
+Only present the final local link as a completed handoff after the destination, access, and integrity checks pass. Report what was verified without claiming the user opened the file unless the user actually confirms that action.
+
 ## Skill regression scenarios
 
 Use these fixtures for forward evaluation of the workflow. The expected disposition is part of the fixture; an evaluator should vary filenames and domain details so success does not depend on memorized wording.
@@ -70,3 +84,21 @@ Use these fixtures for forward evaluation of the workflow. The expected disposit
 - Setup: the issue only corrects prose and has no executable behavior.
 - Required evidence: run applicable documentation, link, render, schema, or packaging checks; record runtime validation as `not applicable` with the reason.
 - Expected result: the issue may be fully verified without fabricating a runtime command when every material documentation criterion has appropriate evidence.
+
+### Windows protected temporary-directory handoff
+
+- Setup: a synthetic artifact is generated in a sandbox-owned Windows temporary directory with inheritance disabled. The agent account can render and read it, but the intended interactive user lacks parent-directory traversal or final-file read access.
+- Required evidence: distinguish the two accounts, inspect the complete parent and file ACL chain including protected inheritance and deny entries, and attempt an intended-user access check when the environment supports it.
+- Expected result: the temporary path is not presented as a completed handoff. Generation and agent-side review may remain verified, but delivery access is `not verified` or failed until a safe destination is used.
+
+### Accessible Windows artifact delivery
+
+- Setup: copy the same synthetic artifact into an approved persistent, ignored handoff directory created with normal user-accessible inheritance.
+- Required evidence: verify intended-user parent traversal and final-file read access, compare source and destination hashes, and inspect the delivered artifact through the appropriate viewer or parser. If account impersonation is unavailable, state that limitation instead of treating ACL inspection as proof of access.
+- Expected result: the final link may be handed off only when the available access check passes and the hashes match. Preserve the private source and do not claim the user opened the artifact without user confirmation.
+
+### POSIX private scratch and final delivery
+
+- Setup: a synthetic artifact is generated beneath a private scratch directory such as one with mode `0700`, while the final handoff must be readable by a different intended user or appropriately scoped group.
+- Required evidence: keep the scratch permissions unchanged, copy the final artifact to an approved persistent destination, verify execute permission on every parent and read permission on the file in the intended access context, and compare source and destination hashes.
+- Expected result: the private scratch path is never used as the final handoff. If scoped destination access cannot be established without broad grants or ownership changes, delivery remains `not verified` and the workflow reports the blocker.
