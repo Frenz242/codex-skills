@@ -184,8 +184,9 @@ class InitializationTests(StoreCase):
         connection.close()
 
     def test_default_path_and_override_are_stable_user_level_locations(self) -> None:
-        default = store.default_database_path(environ={}, home=Path("C:/Users/Example"))
-        self.assertTrue(str(default).lower().endswith(".agents\\skill-feedback\\skill-feedback.db"))
+        home = self.root / "example-home"
+        default = store.default_database_path(environ={}, home=home)
+        self.assertEqual((home / ".agents" / "skill-feedback" / "skill-feedback.db").resolve(), default)
         override = self.root / "stable" / "custom.db"
         self.assertEqual(
             override.resolve(),
