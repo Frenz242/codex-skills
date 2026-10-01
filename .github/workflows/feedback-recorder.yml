@@ -1,0 +1,40 @@
+name: Feedback recorder
+on:
+  push:
+    paths:
+      - 'improve-skills/**'
+      - 'process-issues/SKILL.md'
+      - 'plan-parallel-work/SKILL.md'
+      - 'sync-after-merge/SKILL.md'
+      - '.github/workflows/feedback-recorder.yml'
+  pull_request:
+    paths:
+      - 'improve-skills/**'
+      - 'process-issues/SKILL.md'
+      - 'plan-parallel-work/SKILL.md'
+      - 'sync-after-merge/SKILL.md'
+      - '.github/workflows/feedback-recorder.yml'
+permissions:
+  contents: read
+jobs:
+  recorder:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Require both Windows shells
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Get-Command powershell, pwsh -ErrorAction Stop
+      - name: Require native POSIX shell
+        if: runner.os != 'Windows'
+        run: command -v sh
+      - name: Recorder unit and launcher persistence tests
+        run: python -B -m unittest discover -s improve-skills/tests -p "test_*.py" -v

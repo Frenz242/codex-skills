@@ -184,8 +184,9 @@ class InitializationTests(StoreCase):
         connection.close()
 
     def test_default_path_and_override_are_stable_user_level_locations(self) -> None:
-        default = store.default_database_path(environ={}, home=Path("C:/Users/Example"))
-        self.assertTrue(str(default).lower().endswith(".agents\\skill-feedback\\skill-feedback.db"))
+        home = self.root / "example-home"
+        default = store.default_database_path(environ={}, home=home)
+        self.assertEqual((home / ".agents" / "skill-feedback" / "skill-feedback.db").resolve(), default)
         override = self.root / "stable" / "custom.db"
         self.assertEqual(
             override.resolve(),
@@ -1282,6 +1283,9 @@ class PortableLauncherTests(unittest.TestCase):
             with self.subTest(skill=skill_path.parent.name):
                 self.assertIn("run_feedback_store.ps1", skill_text)
                 self.assertIn("run_feedback_store.sh", skill_text)
+                self.assertIn("Pass `record-run` explicitly before `--skill-path`", skill_text)
+                self.assertIn("observation-protocol.md#recorder-invocation", skill_text)
+                self.assertIn("confirm JSON `ok: true`", skill_text)
                 self.assertNotIn("feedback_store.py record-run", skill_text)
 
 
