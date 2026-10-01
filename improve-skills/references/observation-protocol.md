@@ -10,7 +10,7 @@ Use external routing benchmarks, explicit user reports, or durable task evidence
 
 Participating `SKILL.md` files use this small footer:
 
-> After substantive work completes, make one non-blocking `record-run` call through the shared portable launcher: `improve-skills/scripts/run_feedback_store.ps1` on Windows or `improve-skills/scripts/run_feedback_store.sh` on POSIX. Record minimal run metadata always; include generalized detailed observations only for material evidence. Recording failure must not fail the primary task, and an observation must never trigger skill modification.
+> After substantive work completes, make one non-blocking `record-run` call through the shared portable launcher: `improve-skills/scripts/run_feedback_store.ps1` on Windows or `improve-skills/scripts/run_feedback_store.sh` on POSIX. Pass `record-run` explicitly before `--skill-path`; the launcher does not add it. Follow the shared [recorder invocation](#recorder-invocation) examples and confirm JSON `ok: true` before claiming persistence. Record minimal run metadata always; include generalized detailed observations only for material evidence. Recording failure must not fail the primary task, and an observation must never trigger skill modification.
 
 Resolve the helper and skill directory from the installed skill locations; do not hard-code a user or project path. If observation is inappropriate for a skill—for example, a read-only skill whose policy forbids any local persistence—state the opt-out with its reason in that skill’s footer instead of silently omitting participation.
 
@@ -18,8 +18,47 @@ Resolve the helper and skill directory from the installed skill locations; do no
 
 Use the shared platform launcher rather than invoking `feedback_store.py` directly:
 
-- Windows PowerShell: `& <skills-repository>\improve-skills\scripts\run_feedback_store.ps1`
-- POSIX shell: `<skills-repository>/improve-skills/scripts/run_feedback_store.sh`
+The launcher forwards the full CLI; it does **not** supply a default
+subcommand. Always include the literal `record-run` token before run options.
+Resolve the launcher and participating skill from their installed locations,
+then use absolute paths so the call works from any project directory.
+
+Replace the placeholder paths below with those discovered absolute paths. Use
+the actual invocation mode and outcome; do not copy `explicit` or `success`
+when they do not describe the run.
+
+Windows PowerShell 5.1 or 7:
+
+```powershell
+$launcher = '<absolute-installed-improve-skills-directory>\scripts\run_feedback_store.ps1'
+$skillPath = '<absolute-participating-skill-directory>'
+& $launcher record-run --skill-path "$skillPath" --invocation-mode explicit --outcome success --context-path "$PWD" --non-blocking
+```
+
+When starting a new process, use `powershell -NoProfile -File "$launcher"`
+or `pwsh -NoProfile -File "$launcher"`, followed by the same arguments.
+
+POSIX `sh`:
+
+```sh
+launcher='<absolute-installed-improve-skills-directory>/scripts/run_feedback_store.sh'
+skill_path='<absolute-participating-skill-directory>'
+sh "$launcher" record-run --skill-path "$skill_path" --invocation-mode explicit --outcome success --context-path "$PWD" --non-blocking
+```
+
+Global options precede the subcommand: `--db "<stable-database-path>" record-run`.
+Run options follow it. To include details, append
+`--observation-file "<absolute-sanitized-json-file>"` to the run options.
+Prefer this file form to inline JSON across shell boundaries.
+
+Inspect the returned JSON: only `"ok": true` confirms recording. Explicit
+`--non-blocking` also handles argument-parse failures (including a missing
+`record-run`) with exit 0 and `"ok": false, "nonBlocking": true`, without
+opening or modifying the database. Without that opt-in, parse errors retain
+their nonzero exit. The flag must be an option before any `--` separator.
+Help remains a successful usage request. Missing Python remains a distinct
+launcher failure (exit 127); treat it as best-effort and never claim recording
+succeeded merely because the primary task did.
 
 The launcher tries `CODEX_SKILL_PYTHON`, the bundled Codex runtime, and standard Python commands, accepting only Python 3.10 or newer. It forwards every argument and preserves the recorder's exit code. The database defaults to the stable user-level location:
 

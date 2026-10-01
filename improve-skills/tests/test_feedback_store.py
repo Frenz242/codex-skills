@@ -1282,6 +1282,9 @@ class PortableLauncherTests(unittest.TestCase):
             with self.subTest(skill=skill_path.parent.name):
                 self.assertIn("run_feedback_store.ps1", skill_text)
                 self.assertIn("run_feedback_store.sh", skill_text)
+                self.assertIn("Pass `record-run` explicitly before `--skill-path`", skill_text)
+                self.assertIn("observation-protocol.md#recorder-invocation", skill_text)
+                self.assertIn("confirm JSON `ok: true`", skill_text)
                 self.assertNotIn("feedback_store.py record-run", skill_text)
 
 

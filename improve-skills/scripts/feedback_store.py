@@ -2206,8 +2206,24 @@ def _add_observation_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--observation-file", action="append", default=[])
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Record and review generalized Codex skill evidence")
+class FeedbackArgumentError(FeedbackStoreError):
+    """An explicitly non-blocking invocation could not be parsed."""
+
+
+class NonBlockingArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        # argparse messages can contain observation text or private paths. Keep
+        # this diagnostic static; ordinary CLI errors retain argparse's detail.
+        raise FeedbackArgumentError(
+            "Invalid recorder arguments. Recording requires the explicit 'record-run' "
+            "subcommand before --skill-path and other run options; put global options "
+            "such as --db before the subcommand. Use record-run --help for usage."
+        )
+
+
+def build_parser(*, non_blocking: bool = False) -> argparse.ArgumentParser:
+    parser_class = NonBlockingArgumentParser if non_blocking else argparse.ArgumentParser
+    parser = parser_class(description="Record and review generalized Codex skill evidence")
     parser.add_argument("--db", help=f"Database path (default: {DATABASE_ENV} or user-level .agents path)")
     parser.add_argument("--busy-timeout-ms", type=int, default=DEFAULT_BUSY_TIMEOUT_MS)
     parser.add_argument(
@@ -2443,8 +2459,20 @@ def _execute_command(args: argparse.Namespace, connection: sqlite3.Connection, p
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    # Only an explicit option opts in; tokens after "--" are positional data.
+    option_end = arguments.index("--") if "--" in arguments else len(arguments)
+    parser = build_parser(non_blocking="--non-blocking" in arguments[:option_end])
+    try:
+        args = parser.parse_args(arguments)
+    except FeedbackArgumentError as exc:
+        _emit({
+            "ok": False,
+            "error": exc.__class__.__name__,
+            "message": str(exc),
+            "nonBlocking": True,
+        })
+        return 0
     non_blocking = bool(getattr(args, "non_blocking", False))
     connection: sqlite3.Connection | None = None
     try:

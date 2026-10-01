@@ -57,8 +57,47 @@ Participating skills contain a short post-run footer. After substantive work,
 the skill discovers the installed skills repository and makes one best-effort
 call through the shared platform launcher:
 
-- Windows PowerShell: `& <skills-repository>\improve-skills\scripts\run_feedback_store.ps1`
-- POSIX shell: `<skills-repository>/improve-skills/scripts/run_feedback_store.sh`
+The launcher forwards the full CLI; it does **not** supply a default
+subcommand. Always include the literal `record-run` token before run options.
+Resolve the launcher and participating skill from their installed locations,
+then use absolute paths so the call works from any project directory.
+
+Replace the placeholder paths below with those discovered absolute paths. Use
+the actual invocation mode and outcome; do not copy `explicit` or `success`
+when they do not describe the run.
+
+Windows PowerShell 5.1 or 7:
+
+```powershell
+$launcher = '<absolute-installed-improve-skills-directory>\scripts\run_feedback_store.ps1'
+$skillPath = '<absolute-participating-skill-directory>'
+& $launcher record-run --skill-path "$skillPath" --invocation-mode explicit --outcome success --context-path "$PWD" --non-blocking
+```
+
+When starting a new process, use `powershell -NoProfile -File "$launcher"`
+or `pwsh -NoProfile -File "$launcher"`, followed by the same arguments.
+
+POSIX `sh`:
+
+```sh
+launcher='<absolute-installed-improve-skills-directory>/scripts/run_feedback_store.sh'
+skill_path='<absolute-participating-skill-directory>'
+sh "$launcher" record-run --skill-path "$skill_path" --invocation-mode explicit --outcome success --context-path "$PWD" --non-blocking
+```
+
+Global options precede the subcommand: `--db "<stable-database-path>" record-run`.
+Run options follow it. To include details, append
+`--observation-file "<absolute-sanitized-json-file>"` to the run options.
+Prefer this file form to inline JSON across shell boundaries.
+
+Inspect the returned JSON: only `"ok": true` confirms recording. Explicit
+`--non-blocking` also handles argument-parse failures (including a missing
+`record-run`) with exit 0 and `"ok": false, "nonBlocking": true`, without
+opening or modifying the database. Without that opt-in, parse errors retain
+their nonzero exit. The flag must be an option before any `--` separator.
+Help remains a successful usage request. Missing Python remains a distinct
+launcher failure (exit 127); treat it as best-effort and never claim recording
+succeeded merely because the primary task did.
 
 The launcher tries `CODEX_SKILL_PYTHON`, the bundled Codex runtime, and
 standard Python commands, accepting only Python 3.10 or newer. It preserves
@@ -249,6 +288,22 @@ statistics and denominators remain unchanged. Use `--source-kind agent` (or
 `all`), `--target-kind`, and `--target-component` for explicit source/target
 analysis. Query output displays source kind separately from target kind and any
 observer or target skill identity.
+
+## Recorder validation
+
+Run the recorder unit and launcher integration suite with Python 3.10+:
+
+```text
+python -B -m unittest discover -s improve-skills/tests -p "test_*.py" -v
+```
+
+The integration tests create unique fixture directories beneath the test user's
+home, outside Git and OS temporary storage, and remove them afterward. They use
+isolated databases with the real durability and privacy checks enabled.
+They exercise installed launcher copies from an unrelated working directory,
+paths with spaces, saved runs/observations/history, parse failures, and exit
+behavior. The Feedback recorder CI workflow runs on Windows, Linux, and macOS;
+Windows requires both PowerShell 5.1 and 7, and POSIX runners require `sh`.
 
 ## What the skill deliberately does not do
 
