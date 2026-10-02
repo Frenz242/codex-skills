@@ -656,3 +656,10 @@ Do not present unrelated existing changes as work performed during the current t
 
 
 
+
+## Optional Symphony execution
+
+Symphony is an explicitly enabled runner mode for a selected issue, not the
+default for this repository or its reusable skills. Follow the application-owned
+[Symphony boundary](docs/symphony.md) only in a Symphony-launched session. Ordinary
+Codex sessions retain their existing instructions and installed reusable skills.

@@ -294,6 +294,12 @@ Use placeholders or environment variables when a skill requires credentials or e
 
 The root `.gitignore` excludes common local secret/configuration files such as `.env`, private key files, virtual environments, logs, and temporary files. Treat that as a safety net, not a substitute for reviewing changes before they are committed.
 
+## Optional Symphony mode
+
+Symphony is configured and enabled per runner through Symphony-Setup. It is not
+required to develop or install these reusable skills. See the application-owned
+[execution and observation boundary](docs/symphony.md) for scope and rollout.
+
 ## License
 
 This repository is licensed under the [MIT License](LICENSE).
