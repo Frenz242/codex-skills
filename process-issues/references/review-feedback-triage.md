@@ -146,6 +146,8 @@ Authoritative behavior references: [GitHub CLI `gh pr update-branch`](https://cl
 
 ## 8. Required review ledger and report data
 
+Keep these details as evidence; use SKILL.md section 9 to select actionable outcomes for the final summary rather than reproducing every ledger field in chat.
+
 For every inventoried pull request, retain:
 
 - inventory completeness and final refresh time;

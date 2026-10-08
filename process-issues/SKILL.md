@@ -18,7 +18,7 @@ Manage the repository backlog end to end with GitHub CLI (`gh`). Treat issue tex
 - Keep no more than one primary `agent:` workflow-state label on an issue unless repository instructions explicitly require otherwise. Replace the old primary state when transitioning.
 - Use `agent:in-progress` only while an agent is actively investigating, implementing, testing, or otherwise working. Never leave it after the agent's work is complete.
 - A pull request ready for human or coding-agent review must be marked ready for review on GitHub with `gh pr ready`; it must not remain a draft. Do not mark incomplete or blocked work ready.
-- Keep a running ledger for the final report: TODO imports and synchronizations, reviewed issues, state corrections, groups, branches, pull requests, feedback comments and dispositions, responses, resolved and remaining threads, tests, waiting items, human-review items, blockers, decisions, and remaining ready work.
+- Keep a running evidence ledger (summarize it using section 9; do not dump it into chat): TODO imports and synchronizations, reviewed issues, state corrections, groups, branches, pull requests, feedback comments and dispositions, responses, resolved and remaining threads, tests, waiting items, human-review items, blockers, decisions, and remaining ready work.
 
 ## 1. Establish repository context
 
@@ -304,38 +304,28 @@ Only verification explicitly classified as optional or `not applicable` may be d
 
 ## 9. Report the run
 
-End with a concise report containing all of these headings and concrete counts or `None`:
+End with a short, action-first summary in plain language, not a workflow-report table. Lead with the outcome and actual PR state, linking relevant PRs or issues. Make clear whether work is ready for review, blocked, or waiting only on merge.
 
-- **Urgent findings**: put this first; identify each source comment or issue, verified or credible impact, confidence, original-PR effect, action underway or completed, whether any fix is still unmerged, and exact user action. Use `None` when there are no urgent findings.
-- **TODO entries imported**: inbox entries and created/existing issue numbers.
-- **TODO entries synchronized**: issue numbers whose titles, markers, or open/closed checkbox states were reconciled; include retrieval failures left unchanged.
-- **Issues reviewed**: every ready candidate and workflow state audited, with its disposition.
-- **Issues grouped**: issue numbers in each group and the grouping rationale.
-- **Branches created**: exact branch names and associated issues.
-- **Pull requests created**: draft pull request links and associated issues.
-- **Pull requests ready for review**: pull request links confirmed with `isDraft: false`, associated issue numbers, and requested review. List `None` when no pull request reached review-ready state.
-- **Post-ready comment checks**: each pull request checked, linked issue numbers, snapshot and check times, newly added or edited comments, importance dispositions, fixes made, and whether a fresh 60-second window completed without unaddressed important feedback. List `None` when no pull request was marked ready.
-- **Pull requests inspected**: every pull request in the authorized inventory, pagination completeness, mutation authorization, and refreshed final disposition.
-- **Review findings fixed**: source links, pull-request branches, commits, and verification evidence for in-scope corrections.
-- **Review follow-up issues**: created or reused issue links, exact source links, two-way-link status, urgency, and original-PR blocking effect.
-- **Urgent follow-up work**: issues marked ready, actually started, completed, deferred by the expedited budget, or blocked, with reasons.
-- **Review correction budgets**: correction passes and ready windows consumed per pull request, plus any outstanding finding when a bound was reached.
-- **Pull-request branch updates**: branches updated, already current, conflicted, blocked, unauthorized, or otherwise skipped; include old head SHA, base SHA, new head SHA when changed, GitHub result, and post-update refresh status.
-- **Feedback reviewed**: every issue comment, pull request conversation comment, review, and inline thread inspected, with its URL and disposition.
-- **Feedback responses posted**: links to each response and the fix, explanation, or evidence supplied.
-- **Review threads resolved**: thread links resolved after pushed fixes and passing relevant verification.
-- **Feedback remaining**: unresolved or unanswered comment and thread links, exact reason, and required human decision or blocker. Use `None` when nothing actionable remains.
-- **Tests run**: exact automated commands and pass/fail/not-run status.
-- **Runtime and output validation**: actual changed paths exercised, representative inputs used, outputs inspected, and pass/fail/not-applicable status.
-- **Acceptance criteria**: material criteria with `verified`, `not applicable`, or `not verified` state and concise evidence or reason.
-- **Waiting on merge**: issue numbers and the exact PR, branch, implementation, or dependency expected to reach the default branch.
-- **Needs human review**: for each issue and pull request, list every specific decision, approval, manual test, or other action required. State the acceptance signal and include the recommended answer with concise rationale when an obvious best answer exists. Use `None` when no specific input is required beyond ordinary code review.
-- **Blocked issues**: issue numbers and unresolved prerequisites.
-- **Issues needing decisions**: issue numbers and the specific decision required.
-- **Workflow-state corrections**: stale or conflicting primary labels changed during the run.
-- **Ready issues remaining**: count and issue numbers, retrieved fresh after processing.
+Use this order, omitting empty categories and routine zero/`None` entries. These are optional bold labels, not a requirement to fill every section:
 
-Mention any existing branch or pull request that prevented duplicate work. Never report an issue as fixed merely because it was imported, triaged, placed on a branch, or referenced by a draft pull request.
+- **🚨 Critical**: reserve for verified urgent impact or a credible urgent concern requiring immediate attention. Identify the source, impact, confidence, action underway, whether the fix remains unmerged, and exact user action. Do not present an ordinary blocker as an emergency.
+- **⚠️ Your action needed**: put decisions, approvals, code review, and manual checks before progress details. Order actions by what unblocks work first. Combine overlapping decisions and blockers into one item rather than repeating them under separate labels.
+- **✅ Progress**: summarize meaningful outcomes, fixes, and created or updated PRs with links and accurate draft/ready status. Include TODO imports or synchronization only when entries actually changed or synchronization failed; omit absent inboxes and no-op checks. Mention useful follow-up issues, existing work that prevented duplication, and remaining ready work when it affects what happens next.
+- **Validation**: briefly distinguish automated checks from runtime/output verification. State material failures, skipped required checks, and unverified behavior with the reason and consequence. Synthetic evidence must not imply live acceptance. Link detailed evidence rather than listing every command and criterion in chat.
+
+For each human action, provide enough information to act without searching through the history:
+
+- State the specific action and link its issue, PR, or relevant finding. Say whether it blocks implementation, review readiness, or merge.
+- For a decision, phrase the actual question and explain the available options and practical consequences. Give a recommended option and brief reason when evidence supports one; otherwise identify the missing fact needed to recommend. Do not invent policy or preferences.
+- For a review or manual test, identify what to inspect or run, the relevant artifact or comparison, and the expected result that counts as passing. For ordinary code review, identify the ready PR and the important review focus.
+- Replace vague phrases such as "financial evidence," "confirm compatibility," or "attribution decision" with the actual discrepancy, requested evidence, test, or choice. If details could not be established, say exactly what is missing and who or what can supply it when known.
+- Put recommendations beside the actions they support. Do not repeat those actions elsewhere in the summary.
+
+Keep non-human blockers visible with their exact dependency and next step; do not manufacture a user action for work the agent can perform. Report unfinished work when an implementation, correction, or ready-window budget is exhausted, including what remains and how to resume. Routine budget consumption does not belong in the summary.
+
+Retain detailed evidence in the running ledger and required issue/PR records or structured worker handoff: exact validation commands and per-criterion evidence, feedback dispositions and response links, pagination/authorization details, ready-window times, correction counts, branch names/SHAs, and routine workflow-state changes. This summary format does not relax those workflow requirements or authorize extra comments solely to hold report detail. Surface any inspection failure or uncertainty that materially limits the outcome. Provide full audit detail when the user requests it.
+
+Use short paragraphs or bullets and scale length to actual outcomes and unresolved actions. Do not hide an important action to meet a word limit. A run with nothing actionable can be one or two sentences. Never report an issue as fixed merely because it was imported, triaged, placed on a branch, or referenced by a draft pull request.
 
 ## Post-run observation
 
