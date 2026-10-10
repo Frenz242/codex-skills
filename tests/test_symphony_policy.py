@@ -57,9 +57,15 @@ class SymphonyPolicyTests(unittest.TestCase):
         self.assertIn("final_check_runs", land)
         self.assertIn("final_statuses", land)
         self.assertIn("latest-statuses.jq", land)
+        self.assertIn("actionable-feedback.jq", land)
+        self.assertIn('--slurpfile preliminary_reviews "$preliminary_reviews"', land)
+        self.assertIn('--slurpfile preliminary_threads "$preliminary_threads"', land)
+        self.assertIn('--slurpfile final_threads "$final_threads"', land)
         self.assertIn("rules/branches", land)
+        self.assertIn("rules/branches/$base_ref", land)
+        self.assertIn("/pulls/$pr_number/comments?per_page=100", land)
         self.assertIn("/issues/$pr_number/comments?per_page=100", land)
-        self.assertIn("/reviews?per_page=100", land)
+        self.assertIn("/pulls/$pr_number/reviews?per_page=100", land)
         self.assertIn("/check-runs?per_page=100", land)
         self.assertIn("/statuses?per_page=100", land)
         self.assertIn('--match-head-commit "$head_oid"', land)
@@ -73,9 +79,218 @@ class SymphonyPolicyTests(unittest.TestCase):
         self.assertIn("pending_checks == 0 && failed_checks == 0 )) || {", land)
         self.assertIn('codex_review_failed "$final_comments"', land)
         self.assertGreaterEqual(land.count("exit 1"), 10)
-        self.assertIn(
-            "final_comments, and final_reviews",
-            land,
+        self.assertNotIn("pulls/1", land)
+        self.assertNotIn("issues/1", land)
+        self.assertNotIn("rules/branches/main", land)
+        self.assertLess(land.index('> "$preliminary_reviews"'), land.index("timeout 10m"))
+        self.assertGreaterEqual(land.count("/pulls/$pr_number/reviews?per_page=100"), 2)
+        self.assertEqual(land.count("reviewThreads(first:100,after:$endCursor)"), 1)
+        self.assertGreaterEqual(land.count("gh api graphql --paginate --slurp"), 2)
+        for binding in (
+            '--slurpfile final_inline "$final_inline"',
+            '--slurpfile final_comments "$final_comments"',
+            '--slurpfile final_reviews "$final_reviews"',
+            "actionable_feedback == 0",
+        ):
+            self.assertIn(binding, land)
+        self.assertGreater(
+            land.index("actionable_feedback=$(jq -n"),
+            land.index('"repos/$repo_nwo/pulls/$pr_number/reviews?per_page=100"'),
+        )
+        self.assertLess(
+            land.index("actionable_feedback == 0"),
+            land.index('gh pr merge "$pr_number"'),
+        )
+
+    def test_actionable_feedback_reducer_uses_every_final_source(self) -> None:
+        reducer = ROOT / ".codex/skills/land/scripts/actionable-feedback.jq"
+
+        def count(
+            preliminary_inline: list[dict],
+            preliminary_comments: list[dict],
+            preliminary_reviews: list[dict],
+            final_inline: list[dict],
+            final_comments: list[dict],
+            final_reviews: list[dict],
+            preliminary_threads: list[dict] | None = None,
+            final_threads: list[dict] | None = None,
+        ) -> int:
+            values = {
+                "preliminary_inline": preliminary_inline,
+                "preliminary_comments": preliminary_comments,
+                "preliminary_reviews": preliminary_reviews,
+                "final_inline": final_inline,
+                "final_comments": final_comments,
+                "final_reviews": final_reviews,
+                "preliminary_threads": preliminary_threads or [],
+                "final_threads": final_threads or [],
+            }
+            with tempfile.TemporaryDirectory() as directory:
+                arguments = ["jq", "-n"]
+                for name, value in values.items():
+                    path = Path(directory) / f"{name}.json"
+                    path.write_text(json.dumps(value), encoding="utf-8")
+                    arguments.extend(("--slurpfile", name, str(path)))
+                arguments.extend(("-f", str(reducer)))
+                result = subprocess.run(
+                    arguments,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            return int(result.stdout)
+
+        inline = [{"id": 1}]
+        comments = [{"id": 2}]
+        approved = [
+            {
+                "user": {"login": "reviewer"},
+                "state": "APPROVED",
+                "submitted_at": "2",
+            }
+        ]
+        self.assertEqual(count(inline, comments, approved, inline, comments, approved), 0)
+        self.assertEqual(count(inline, comments, approved, inline + [{"id": 3}], comments, approved), 1)
+        self.assertEqual(count(inline, comments, approved, inline, comments + [{"id": 4}], approved), 1)
+        changes_requested = approved + [
+            {
+                "user": {"login": "reviewer"},
+                "state": "CHANGES_REQUESTED",
+                "submitted_at": "3",
+            }
+        ]
+        self.assertGreater(count(inline, comments, approved, inline, comments, changes_requested), 0)
+        request_then_comment = [
+            {
+                "user": {"login": "reviewer"},
+                "state": "CHANGES_REQUESTED",
+                "submitted_at": "1",
+            },
+            {
+                "user": {"login": "reviewer"},
+                "state": "COMMENTED",
+                "submitted_at": "2",
+            },
+        ]
+        self.assertGreater(count(inline, comments, [], inline, comments, request_then_comment), 0)
+        request_then_approval = request_then_comment + [
+            {
+                "user": {"login": "reviewer"},
+                "state": "APPROVED",
+                "submitted_at": "3",
+            }
+        ]
+        self.assertEqual(
+            count(inline, comments, request_then_comment, inline, comments, request_then_approval),
+            0,
+        )
+        standalone_review_body = [
+            {
+                "id": 9,
+                "user": {"login": "reviewer"},
+                "state": "COMMENTED",
+                "body": "Please revise",
+                "submitted_at": "4",
+            }
+        ]
+        self.assertGreater(count(inline, comments, [], inline, comments, standalone_review_body), 0)
+        self.assertEqual(
+            count(
+                inline,
+                comments,
+                standalone_review_body,
+                inline,
+                comments,
+                standalone_review_body,
+            ),
+            0,
+        )
+        edited_inline = [{"id": 1, "body": "Please revise", "updated_at": "2"}]
+        self.assertEqual(
+            count(inline, comments, approved, edited_inline, comments, approved),
+            1,
+        )
+        edited_comment = [{"id": 2, "body": "Please revise", "updated_at": "2"}]
+        self.assertEqual(
+            count(inline, comments, approved, inline, edited_comment, approved),
+            1,
+        )
+        summary_pending = [
+            {
+                "id": 2,
+                "user": {"login": "chatgpt-codex-connector"},
+                "body": "codex-pull-request-review-summary Running",
+                "updated_at": "1",
+            }
+        ]
+        summary_complete = [
+            {
+                "id": 2,
+                "user": {"login": "chatgpt-codex-connector"},
+                "body": "codex-pull-request-review-summary Completed",
+                "updated_at": "2",
+            }
+        ]
+        self.assertEqual(
+            count(inline, summary_pending, approved, inline, summary_complete, approved),
+            0,
+        )
+        human_marker = [
+            {
+                "id": 2,
+                "user": {"login": "human"},
+                "body": "codex-pull-request-review-summary: please revise",
+                "updated_at": "2",
+            }
+        ]
+        self.assertEqual(
+            count(inline, comments, approved, inline, human_marker, approved),
+            1,
+        )
+        pending_review = [
+            {
+                "id": 8,
+                "user": {"login": "reviewer"},
+                "state": "PENDING",
+                "body": "Please revise",
+            }
+        ]
+        submitted_review = [
+            {
+                "id": 8,
+                "user": {"login": "reviewer"},
+                "state": "COMMENTED",
+                "body": "Please revise",
+                "submitted_at": "4",
+            }
+        ]
+        self.assertGreater(
+            count(inline, comments, pending_review, inline, comments, submitted_review),
+            0,
+        )
+        dismissed_approval = [
+            {
+                "user": {"login": "reviewer"},
+                "state": "DISMISSED",
+                "submitted_at": "2",
+            }
+        ]
+        self.assertGreater(
+            count(inline, comments, approved, inline, comments, dismissed_approval),
+            0,
+        )
+        self.assertEqual(
+            count(
+                inline,
+                comments,
+                approved,
+                inline,
+                comments,
+                approved,
+                preliminary_threads=[{"id": "thread-1", "isResolved": True}],
+                final_threads=[{"id": "thread-1", "isResolved": False}],
+            ),
+            1,
         )
 
     def test_commit_status_reducer_keeps_newest_context_state(self) -> None:
