@@ -1,0 +1,6 @@
+interface:
+  display_name: "New Project"
+  short_description: "Set up adaptable projects and GitHub workflows"
+  default_prompt: "Use $new-project to set up this project with an appropriate structure, local storage, and the GitHub workflows it needs."
+policy:
+  allow_implicit_invocation: true
