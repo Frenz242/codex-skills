@@ -135,6 +135,12 @@ Some skills deliberately require explicit invocation, while others also document
 
 ## Available Skills
 
+### `new-project`
+
+Sets up adaptable projects with local working storage, a concise organization guide, and verified GitHub defaults. Uses `process-issues` by default while honoring an explicit opt-out, asks about relevant workflow setup, and keeps issue synchronization with Linear disabled unless requested.
+
+See [`new-project/SKILL.md`](new-project/SKILL.md) for the complete skill instructions.
+
 ### `process-issues`
 
 Reviews a GitHub repository for actionable work, including GitHub issues and TODO-style items in the codebase, and assists with processing that work.
