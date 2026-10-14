@@ -24,8 +24,9 @@ Keep repositories, source, scripts, dependencies, virtual environments, caches, 
 
 ## Establish Git safely when needed
 
-- If Git metadata already exists, inspect `git status`, remotes, branches, and applicable instructions before changes. Fetch the verified origin once, compare local main with `origin/main`, and fast-forward local main only when safe. Do not discard, stash, or hide user work to synchronize. Before continuing a feature branch, assess whether current main needs incorporating.
-- Use feature branches for implementation and preserve `origin/main` as authoritative for main. Do not create independent commits on local main. If a repository uses a different default branch, verify and use its actual default rather than inventing main.
+- If Git metadata already exists, inspect `git status`, configured remote names/URLs, branches, and applicable instructions before changes. Git metadata alone does not establish that `origin` or any remote branch exists. Verify which configured remote is the intended authoritative repository; preserve a different remote name rather than assuming or renaming it to `origin`. If no suitable remote is configured, defer fetching and remote-branch comparison until the remote setup below; continue independent setup without treating a normal new-repository state as an authentication failure.
+- Fetch the verified existing remote once. After a successful fetch, determine whether its actual default-branch ref and the corresponding local branch exist before comparing or fast-forwarding them. An empty remote or an unborn local branch has nothing to synchronize yet: defer those operations until the required refs exist. A failed fetch is an error to diagnose, not evidence of an empty remote. Do not discard, stash, or hide user work to synchronize. Before continuing a feature branch, assess whether the verified remote default needs incorporating.
+- Use feature branches for implementation. When `origin/main` exists, preserve it as authoritative for main; otherwise use the verified authoritative remote and actual default branch when available. Do not invent missing refs or create independent commits on local main.
 - On Windows, never initialize or clone a repository under the user's normal working directories from a Codex sandbox account. Check for existing Git metadata first. If absent, have the user run `git init -b main` in the intended directory from their normal PowerShell account, or perform the initial clone themselves. Do not create a new `.git` directory as a workaround. Continue independent planning and documentation where permitted, and resume Git work after initialization is verified.
 - For dubious ownership errors, report the ownership mismatch and have the user repair it from their normal/elevated account as appropriate. Do not add a `safe.directory` exception or change Git metadata ownership yourself.
 - Launch PowerShell with `-NoProfile`. Before reporting GitHub authentication unavailable, run both `gh auth status` and `gh api user --jq ".login"`. Distinguish sandbox/network failures from authentication and repository permissions; request the specific required execution permission where supported. Report failed GitHub commands with their exit codes and relevant sanitized errors.
@@ -44,6 +45,8 @@ For approved setup, use the current participating skill and repository conventio
 ## Configure the target GitHub repository
 
 After ownership, visibility, and creation/setup authorization are established, create or configure only the intended remote repository. Never use a remote setup command that implicitly clones into an uninitialized Windows working directory.
+
+If synchronization was deferred, verify the intended remote URL and its local remote name after configuration, then perform the guarded fetch and branch checks above. For a newly created empty remote, continue authorized bootstrap work and perform branch comparison only after the relevant remote and local refs exist. Do not repeatedly fetch a remote already checked unless there is evidence it changed.
 
 ### Delete branches after merge
 
