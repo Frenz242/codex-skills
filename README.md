@@ -135,6 +135,12 @@ Some skills deliberately require explicit invocation, while others also document
 
 ## Available Skills
 
+### `frenz-dashboard`
+
+Creates dashboards with a short recommendation-led interview, vivid palettes, System/Light/Dark themes, comfortable summary-to-detail layouts, and charts selected for the data. Carries forward WorkTrace's shared filters, persistent chart details, category identity and restorable navigation without requiring the same palette or chart lineup.
+
+See [`frenz-dashboard/SKILL.md`](frenz-dashboard/SKILL.md) for the complete skill instructions and saved defaults.
+
 ### `new-project`
 
 Sets up adaptable projects with local working storage, a concise organization guide, and verified GitHub defaults. Uses `process-issues` by default while honoring an explicit opt-out, asks about relevant workflow setup, and keeps issue synchronization with Linear disabled unless requested.

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Frenz-Dashboard"
+  short_description: "Vivid dashboards with interviews and data-fit charts"
+  default_prompt: "Use $frenz-dashboard to interview me briefly, suggest a vivid palette and suitable charts, and build a dashboard using my saved UX defaults."
