@@ -14,6 +14,26 @@ The principles are captured here so normal use does not require access to WorkTr
 - The source used an approximately 230px desktop sidebar, a 1620px maximum main region, 10-12px card corners and an approximately 1.65:1 primary/supporting chart split. These are optional starting proportions, not fixed requirements. A simple dashboard may need no sidebar.
 - On mobile, stack content in priority order, keep controls reachable and wrap long labels. Constrain horizontal scrolling to a deliberate chart/table region, not the whole page. Do not simply shrink desktop charts until labels become unreadable.
 
+## Collapsible navigation and reusable components
+
+- Every navigation menu must collapse and expand on desktop and mobile. Use the familiar three-line hamburger icon with a clearly labeled Menu button, `aria-expanded`, `aria-controls`, visible focus and keyboard activation. Keep the toggle reachable when collapsed; hidden items must leave the focus order.
+- Collapse the sidebar track itself so the main content gains its space. Keep view state above the menu component: toggling must preserve section, filters, sort, page, page size and open details without changing the URL.
+- On mobile, wrap menu items and long labels onto additional lines in normal document flow. Do not create an internally scrolling menu or merely hide its scrollbar while clipping content; allow normal page scrolling so every link remains reachable. Return focus to Menu when closing from within the navigation.
+- Reuse Menu, table, sorting, pagination/page-size, detail and callout components wherever behavior matches. Share state validation and serialization rather than duplicating them per view; retain specialized components when their behavior differs.
+
+## Self-documenting views
+
+- Explain tags, warnings and unique/domain terms in nearby plain-English info boxes or callouts. A new reader should understand the view without consulting its author.
+- Explain what a tag means and why it applies; for warnings, explain the trigger, practical effect and relevant next step. Define unusual terms where first used, including units or calculation rules when needed. Do not invent unresolved definitions or thresholds.
+- Repeated labels may use a shared adjacent legend. Expandable callouts can hold secondary details, but essential warning meaning and actions remain visible. Explanations must work with touch and keyboard, not only hover or color.
+
+## Sortable, paginated tables
+
+- Every table list across the site has sorting and pagination, including secondary and detail-view lists. Use semantic table headers, keyboard-operable sort buttons and an announced sort direction such as `aria-sort`. Provide a stable tie-breaker and type-aware numeric/date/text ordering.
+- Filter first, sort the full matching dataset, then paginate; server-side sources must apply the same order and return matching counts. Never sort only the visible page.
+- Provide a labeled rows-per-page selector, current range/total and accessible page controls. Remember the last explicitly selected page size across the site; a valid shared URL wins for that view without overwriting the saved preference.
+- Reset to page 1 on filter/sort/page-size changes; clamp out-of-range pages after data changes, including empty results. A single-page or empty table may disable unneeded page controls but must keep its count and page-size setting understandable.
+
 ## Theme and color identity
 
 - Use shared tokens for background, surface, text, muted text, border, accent, focus and semantic states. Theme the logo/favicon, controls, tooltips and charts consistently when those assets are in scope.
@@ -38,7 +58,9 @@ The principles are captured here so normal use does not require access to WorkTr
 - Back/Forward restore meaningful sections, dates, filters, sorting, pagination and inspected records. Reload restores the current view where persistence is appropriate.
 - Coalesce consecutive search typing into one meaningful history step, including the first keystroke if it resets pagination. Replace automatic corrections to invalid pages so Back cannot loop through an impossible page.
 - Keep navigation state separate from durable saved data. Going Back must not undo a recorded decision, re-import a snapshot or repeat a write.
-- Choose URL, session or local persistence according to sharing and privacy requirements. The source kept view state tab-local and names out of URLs. Shareable links are optional; never place sensitive filter values in URLs merely to support Back/Forward.
+- Follow [the URL contract](url-state-contract.md): serialize validated section, filters, sort, page, page size and open entry into query parameters. Keep the URL synchronized and provide a discoverable copy-view-link action. Direct load, reload and Back/Forward must restore that view.
+- Closing details removes only the entry parameter with replace navigation; never rely on Back to close a directly opened entry. After lookup completes, missing/unavailable IDs produce an accessible dismissible notice and the same safe cleanup without changing the rest of the view.
+- Keep sensitive data out of URLs and enforce normal access permissions for linked entries. Local persistence supplements URLs for personal preferences such as theme, menu collapse and default page size; it does not replace shareable navigation.
 
 ## Useful optional capabilities
 
