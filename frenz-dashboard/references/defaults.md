@@ -10,6 +10,11 @@ These are starting preferences, not mandatory styling for every project. Explici
 | Theme | Follow the system initially, with visible System/Light/Dark choices and a persistent preference. |
 | Density | Comfortable spacing that adapts to mobile. Compact density is an option when the task calls for it. |
 | Layout | Summary to detail: useful KPIs, primary chart, supporting views, searchable records when relevant. Sidebar or other navigation only when useful. |
+| Navigation | Standard hamburger icon and accessible Menu toggle; collapse releases sidebar space without state loss. Mobile items and labels wrap; no internal menu scrollbar. |
+| Self-documentation | Nearby plain-English info boxes or callouts explain tags, warnings and unique terms, including implications and relevant next steps. |
+| URLs | Shareable query state for section, filters, sort, page, page size and open entry; restore on direct load, reload and Back/Forward. |
+| Tables | Sortable columns, pagination on every table list and a remembered rows-per-page selector. Explicit shared URL values take precedence over local preferences. |
+| Reuse | Share components and state logic where practical while preserving meaningful differences between views. |
 | Period | Recommend from data cadence and purpose; one shared date control across applicable views. Six months is an option for activity analysis, not a universal default. |
 | Interaction | Useful filters, persistent click/tap details, keyboard access, and Back/Forward plus reload restoring the view. |
 | Extras | Suggest exports and comparisons when helpful. Add editing only for an authorized need. |
