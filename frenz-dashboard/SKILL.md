@@ -36,11 +36,17 @@ Recommend the initial period from the data cadence and decision. Use one visible
 Read [ux-patterns.md](references/ux-patterns.md) for the reusable design decisions and their source. Apply relevant patterns rather than copying the source dashboard's domain or full implementation:
 
 - Summary-to-detail hierarchy, comfortable cards and readable typography; navigation only where the sections warrant it.
+- Collapsible navigation on desktop and mobile using a standard three-line hamburger icon and an accessible Menu toggle. Collapse must release sidebar space without resetting dashboard state. On mobile, wrap menu items and long labels onto the next line; use normal page scrolling instead of an internal menu scrollbar.
+- Self-documenting views with nearby plain-English info boxes or callouts explaining tags, warnings and unique terms, their implications and relevant next steps.
+- Sortable tables and pagination for every table list, with a rows-per-page selector that remembers the user's last explicit choice across the site.
 - System/Light/Dark modes with a visible selector and persisted preference.
 - Vivid semantic tokens for accents and data, readable neutral surfaces, named categories and exact values. Keep category identity consistent across views.
 - Shared scope, useful filters and discoverable reset behavior.
 - Click/tap detail that stays open, works with keyboard access and fits small screens.
-- Back/Forward and reload restoring view state without reverting saved records or replaying mutations.
+- Shareable query parameters restoring section, filters, sort, page, page size and open entry on direct load, reload and Back/Forward, without reverting saved records or replaying mutations.
+- Dismissible notices for missing entry IDs; closing details removes the entry parameter while preserving a directly opened view.
+
+Read [url-state-contract.md](references/url-state-contract.md) before implementing navigation or tables. Document the site's concrete URL contract and add the five regression tests described there. Reuse its state helper or equivalent project-native logic, along with shared Menu, table, pagination, detail and callout components where practical.
 
 Suggest comparisons, exports or additional exploration controls only when they help the task. Editable records require a real user need and authorization; they are not a default dashboard feature.
 
@@ -55,6 +61,9 @@ Before handoff, validate the implemented behaviors that matter:
 - Reconcile KPI/chart/table totals under the same filters and period; verify aggregation and date boundaries. Verify missing-data behavior, empty and single-value cases, long labels, and dense categories relevant to the dataset.
 - Inspect light and dark renderings at desktop and narrow mobile widths. Check readable text and marks, keyboard focus, reduced-motion preferences, touch scrolling and persistent details. Aim for at least 4.5:1 normal text contrast and 3:1 meaningful non-text controls/marks; color alone must not convey meaning.
 - Exercise filtering, reset, detail dismissal, Back/Forward and reload. If mutations exist, verify that navigation neither undoes nor replays them.
+- Verify hamburger Menu collapse releases sidebar space and preserves all view state; check keyboard/focus behavior and mobile wrapping without an internal menu scrollbar.
+- Verify every table list sorts before pagination, has page-size controls, remembers explicit choices, honors shared URL values and clamps invalid pages after filtering. Check contextual explanations and accessible notice dismissal.
+- Test copied URLs in a fresh tab, malformed query values, direct-entry closing, missing IDs and history restoration. Run all five navigation regression scenarios from the URL contract against the site's implementation.
 - Run applicable documented validation commands. Visually inspect actual rendered output when building a dashboard, not just source code. Report unavailable checks and limitations accurately; viewport emulation is not a physical-device test.
 
 Deliver the dashboard and summarize the selected palette, charts and material validation results. When the current request is only a design or plan, deliver that artifact without silently expanding into implementation or deployment.
