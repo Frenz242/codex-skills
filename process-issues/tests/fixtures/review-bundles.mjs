@@ -7,7 +7,7 @@ export async function fixture() {
     observed_github:{head_sha:sha,state:'open',draft:true,observed_at:at,reviews:'unknown',checks:'unknown'},
     summary:{changed:'Synthetic serializer output fixture',why:'Demonstrate the nonvisual bundle contract',inspect:'Compare the recorded output; this fixture is not live verification'},
     acceptance:[{criterion:'Synthetic output check',state:'verified',automated:[{result:'passed',description:'Synthetic fixture assertion',reason:''}],runtime:[],output:[],delivery:[],limitation:''}],
-    demonstration:{kind:'nonvisual',state:'not applicable',scenario:'Synthetic serializer comparison',outcome:'Expected output is documented in the fixture',tool:'synthetic fixture',source_sha:sha,limitation:'No UI; no video is needed'},
+    demonstration:{kind:'nonvisual',surface:'nonvisual',capture_source:'none',state:'not applicable',scenario:'Synthetic serializer comparison',outcome:'Expected output is documented in the fixture',tool:'synthetic fixture',source_sha:sha,limitation:'No UI; no video is needed'},
     assets:[],publication:{key:'',expected_current_version:0,prepared_at:at}};
   m.publication.key=await publicationKey(m);return m;
 }

@@ -1,181 +1,273 @@
-# Private review Site: evidence foundation and rollout
+# Private review Site: setup, capture and publication
 
-Read this when a project opts in to hosted PR evidence. This implementation is
-**partial**: local configuration inspection, deterministic bundle validation and
-media decoding are available. Automatic publication, the persisted gallery and
-the real-PR/physical-phone pilot are not yet implemented or verified. Do not
-report a local bundle or registered Site as a completed hosted review.
+Read this when a project opts in to hosted PR evidence. The supplied publisher,
+D1/R2 service and mobile gallery implement one private Site with repository
+views and PR deep links. They do not capture a screen or decide whether an
+acceptance criterion passed. The invoking agent owns capture, visual/semantic
+inspection and the existing process-issues readiness gates.
 
-## Current runtime preflight
+## Supported runtime and proof boundary
 
-The initial investigation used Codex desktop on native Windows, Node 24 and the
-installed Sites plugin. Native Site registration and owner-private metadata reads
-worked. The supported Vinext starter built, and a local D1/R2 transport probe
-passed upload/hash/read-back, repeat upload, viewer/write separation, signed-out
-media GET/HEAD/range rejection, private caching, and byte-range tests. This is
-local synthetic evidence, not a hosted transport or phone playback result.
+The integration has been exercised from Codex desktop on native Windows with
+Node 24, Python 3, GitHub CLI, ffmpeg/ffprobe and the installed Sites plugin.
+Use Node 24+ for the publisher and its SQLite tests. Other operating systems,
+WSL, standalone CLI and unattended runs are not yet validated. No schedule,
+daemon or continuous GitHub monitor is installed.
 
-The Site source bootstrap awaits the user's explicit initial commit/push
-approval under their Git policy. Retain its ID in that local Site's
-`.openai/hosting.json`; never register another Site to retry. The registered
-identity, source checkout, seed inventory and credentials do not belong in this
-public skill. Standalone CLI, WSL, macOS/Linux and future unattended execution
-have not been exercised. There is no schedule or background publisher.
+A private deployed Site has passed authenticated binary upload/read-back,
+matching hashes, idempotent retry, viewer/write separation, private caching,
+HEAD/range handling and signed-out direct media rejection from that runtime.
+Automated tests separately cover storage failure, concurrent writes and lost
+responses. These are not visual or physical-phone verification. Record the
+actual real-PR pilot and phone result separately; never infer them from this
+template, its build, synthetic fixtures or a successful upload.
 
-## Opt-in configuration
+## Configure an existing project
 
-Start with `assets/review-site.config.example.json`. Keep the actual config in
-an ignored `.codex/review-site.local.json`, or select another path explicitly
-using the CLI's CONFIG argument. An invoking agent may resolve
-`CODEX_REVIEW_SITE_CONFIG` before passing that argument. The helper itself does
-not implicitly read environment paths. Ignore the local config and evidence
-directory in the target repository's local `.git/info/exclude` or established
-project ignore policy, without replacing existing exclusions. Missing config
-or `enabled: false` produces no Site calls or writes. Unknown versions fail.
+1. Verify repository identity through gh and Git under the normal workflow.
+2. Opt in with an ignored `.codex/review-site.local.json`, starting from
+   `assets/review-site.config.example.json`. The agent may resolve
+   `CODEX_REVIEW_SITE_CONFIG` and pass that path explicitly. The helper does
+   not silently search environment paths. Missing/disabled config means no
+   Site calls or writes. Unknown versions fail.
+3. Append local config/evidence exclusions to `.git/info/exclude`, or use
+   established project ignore policy; preserve existing entries. Never commit
+   local configuration, credentials, real media or raw operational logs.
+4. Set the verified canonical GitHub host and numeric repository ID. Names
+   may change; identity is host plus ID. Reuse the retained Site ID and native
+   canonical HTTPS *.chatgpt.site origin. Custom domains are not supported.
+5. Keep evidence under the configured ignored repository-relative directory,
+   in normal-user-accessible, non-synced storage. Verify junction/symlink and
+   sync policy. The inspector checks containment and ignored/untracked status,
+   but cannot establish intended-user access or every synchronization policy.
+6. Set `required` according to the project's existing acceptance requirements.
+   Do not silently make optional delivery a readiness gate or waive required
+   media. Configure 8–15 seconds as the demonstration target.
 
-The configured repository host and numeric ID must match the verified `gh`
-context. Display names and repository renames do not define project identity.
-Live Site ID/origin must come from native Sites metadata. V1 accepts canonical
-HTTPS `*.chatgpt.site` origins only; custom domains are not yet supported.
-Credentials are environment-variable **names**, never values. The future
-transport uses the documented Site service credential plus a separate
-application publisher secret; ordinary viewers must remain read-only even if
-the audience changes. Missing credentials are a publishing blocker, not an
-instruction to create/rotate a Site bypass token.
+The example is disabled and contains synthetic values. Credential fields are
+environment-variable names, never secret values.
 
-Use a durable, ignored, repository-relative evidence directory outside managed
-installed-skill bundles and synced working folders. The config inspector checks
-Git ignore/tracking and resolved path containment without creating directories.
-The project agent must also check parent sync/junction policy and intended-user
-access, as required by runtime acceptance validation. Local artifacts are not
-user-delivered merely because the agent can read them.
+## One-time Site setup
 
-## Bundle v1 contract
+Use the installed Sites skill and its current source, storage, identity and
+deployment references. Reuse `.openai/hosting.json` when present; never create
+a duplicate Site to retry setup. Verify the Site is owner-private through
+native metadata, not by whether a URL opens. Do not broaden its audience.
 
-`assets/review-manifest.example.json` is a synthetic nonvisual record, not real
-test evidence. `scripts/review-bundle.mjs` is the executable contract. It rejects
-missing/unknown fields, unsupported versions, unsafe filenames, invalid URLs,
-oversized bundles, incomplete verified criteria and inconsistent revision data.
-All timestamps are UTC ISO-8601 ending in `Z` (seconds or milliseconds). Numbers
-are safe integers; durations use milliseconds. Allowed files are PNG, fast-start
-H.264 MP4, UTF-8 text and JSON. Limits: 256 KiB manifest, 8 assets, 16 MiB per file,
-32 MiB total asset bytes. These are local design bounds, **not proven hosted
-payload limits**. A future uploader must enforce the smaller configured limits
-and the live service's advertised limits.
+Start from the supported Vinext starter in a separate local, non-synced source
+project. Follow the user's Git initialization, first-publication and feature
+branch rules. Overlay `assets/review-site/` onto the starter, and copy
+`scripts/review-bundle.mjs` and `scripts/review-service.mjs` into its root
+`lib/` directory. Preserve existing files and schema exports; add
+`export * from './review-schema';` to `db/schema.ts`. The hosting manifest
+needs D1 binding `DB` and R2 binding `BUCKET`. Generate and inspect the
+additive migration with the starter's documented `npm run db:generate`.
+Keep migration history; never replace an applied migration.
 
-Identity:
+Set a random application secret `REVIEW_PUBLISHER_KEY` using Sites runtime
+environment-variable tools, marked secret. Separately obtain the existing
+Site service bearer credential from native metadata. Do not create or rotate
+the platform token merely because publishing failed. The service token grants
+platform access but no visitor identity; the application secret authorizes
+writes. Keep both out of source, arguments, logs, browser code and receipts.
 
-- `project_key = canonical host : numeric repository ID`
-- `pr_key = project_key : PR number`
-- `revision_key = pr_key : full tested head SHA`
-- `publication_key = revision_key : SHA-256(canonical stable evidence)`
+Build/package through the supported Sites workflow, push source, then deploy
+the exact pushed commit privately using the returned archive. Confirm the
+deployment succeeded. Keep account-specific hosting/source metadata in that
+private local source project, outside the reusable skill.
 
-Canonical stable evidence includes only `schema_version`, `repository`,
-`pull_request`, `revision`, `summary`, `acceptance`, `demonstration`, and `assets`.
-Sort assets by logical ID using code-unit order; recursively sort object keys
-using JavaScript's default code-unit order; preserve all other array order.
-Serialize strings using JSON.stringify, integers in decimal and booleans/null
-as JSON, without whitespace; hash UTF-8 bytes. No Unicode normalization occurs.
-Capture/test timestamps remain part of the evidence. The publication key,
-expected-current/CAS version, preparation/retry times and `observed_github` are
-excluded. Receipts, URLs returned by the service, secrets and local paths have
-no manifest fields and must remain separate local sidecars. A retry or status
-refresh preserves the key; genuinely changed evidence creates another key.
+Before relying on a new deployment, prove authenticated binary upload and
+hash read-back, viewer-only write rejection, signed-out GET/HEAD/range denial,
+private cache headers, exact media types and range responses. Preserve a
+sanitized proof record locally. A successful capability response alone does
+not prove media delivery.
 
-An observed matching head means only "matches the head as of this observation."
-A different observed SHA is stale; a null observed SHA is unknown. SHAs never
-imply chronological order. Repository renames preserve project/PR identity,
-while updated display metadata may produce a new evidence payload digest.
+## Capture the real behavior
 
-Use the existing criterion states `verified`, `not applicable`, `not verified`.
-Individual evidence items retain `passed`, `failed`, `skipped`, `not-run` and
-`not applicable` plus reasons. The validator will not accept failed/skipped/
-not-run evidence inside a verified criterion. A UI demonstration cannot be
-`not applicable` just because capture tools are missing. A verified UI record
-needs screenshots, a video, and an asserted matching build SHA. These assertions
-still require agent verification of the actual running build and visible behavior.
+Select the capture surface by the project being demonstrated:
 
-## Local commands and checks
+| Project | Evidence capture |
+| --- | --- |
+| Web or browser-based | Use Codex's built-in browser for screenshots and video of the actual running application. Do not substitute external-browser or computer-use captures. |
+| PowerShell, CLI or other terminal project | Use Codex's built-in terminal where possible. If unavailable, record why and use an already authorized terminal; meaningful command output may be better than video. |
+| Other projects, including native applications | Use computer use under permissions already granted to this session. Request only missing access required for the specific capture/action; do not ask again for existing authorization. |
+| Nonvisual change | Use real semantic/output evidence. A video may be not applicable with a concrete reason. |
 
-Node 22+ is required. Run helpers by their installed absolute path when outside
-this repository. These commands never create a Site, publish, mutate Git or
-modify evidence. The `key` command computes a proposed key; place it in the
-manifest's `publication.key`, then validate the final manifest and exact asset
-directory. Keep assets separate from the manifest and receipts; extra files in
-the asset directory are rejected.
+Discover the available built-in browser/terminal and capture interfaces in the
+current runtime. Opening a Codex panel is not proof of capture capability.
+Do not invent tool calls or use a computer-use/browser-use fallback for web
+evidence when built-in browser capture is unavailable. Record that gap as
+`not verified`, retain finalized evidence and identify the missing capability.
+Only ask for additional access when it is actually needed. Existing session
+permissions do not waive platform approval checks.
+
+Run the representative changed behavior from the exact committed PR revision.
+Verify the launched build's identity, not merely checkout HEAD. Preserve
+unrelated dirty work; do not capture it as proof of the intended revision.
+Record a baseline when useful. Capture concise before/after screenshots and
+an approximately ten-second interaction with an observable result. Do not
+substitute generated imagery, slides, or a clip of passing test text for UI
+behavior. Avoid sensitive data before capture; inspect all finalized assets.
+
+Use ffmpeg/ffprobe only to encode, trim, decode or validate actual captures.
+They are not the capture source. A sequence assembled from genuine built-in
+browser frames must retain the actual interaction order; record frame-capture
+and assembly details rather than implying native video recording. Never
+invent intermediate behavior. Rehash after redaction or encoding.
+
+Record `demonstration.surface` (web, terminal, other, nonvisual) and
+`capture_source` (codex-browser, codex-terminal, authorized-computer-use,
+other-terminal, none). The schema rejects incompatible combinations and
+requires provenance for media. A terminal fallback requires a limitation.
+Describe the actual tool/session/export, scenario and outcome in `tool`;
+keep private session IDs and unnecessary paths in local provenance sidecars.
+These declarations are assertions to verify, not proof supplied by a validator.
+
+## Finalize the bundle
+
+`scripts/review-bundle.mjs` defines version 1. The synthetic manifest example
+is not real evidence. Required fields include exact head/base repository and
+ref identity, tested/full build SHAs, clean-source assertion, UTC capture time,
+actual verification evidence, limitations and SHA-256 asset hashes.
+
+Stable identity is host:repository-ID, then PR number, then full tested SHA.
+The publication key adds the SHA-256 digest of canonical stable evidence:
+schema_version, repository, pull_request, revision, summary, acceptance,
+demonstration and assets. Sort assets by logical ID and object keys by
+JavaScript code-unit order; retain other array order; serialize UTF-8 JSON
+without whitespace or Unicode normalization. Observation/CAS/preparation
+times, receipts and credentials are excluded. Capture timestamps are included.
+Changed evidence creates a new key; retry/status refresh preserves it.
+
+Use criterion states verified, not applicable and not verified. Failed,
+skipped or not-run evidence cannot support a verified criterion. Missing UI
+tools are not a reason for not applicable. Verified UI evidence requires
+screenshots, video and matching build SHA plus actual behavior review.
+
+Allowed assets are PNG, fast-start H.264/yuv420p MP4, UTF-8 text and JSON. Keep
+assets alone in their directory; manifest and receipts belong outside it.
+Local contract limits are 256 KiB manifest, 8 assets, 16 MiB/file and 32 MiB
+total. The service advertises smaller limits: 8 MiB/file, 20 MiB assets and
+21 MiB multipart request. The publisher applies configured and service bounds.
+These are enforced ceilings, not a claim that every hosting/network layer
+accepts the maximum. Oversized evidence must be reduced locally and rehashed.
+
+Run helpers by installed absolute path when outside this repository:
 
 ```text
 node process-issues/scripts/review-bundle-cli.mjs config CONFIG REPO_ROOT
 node process-issues/scripts/review-bundle-cli.mjs key MANIFEST
 node process-issues/scripts/review-bundle-cli.mjs validate MANIFEST ASSET_DIR
-node --test process-issues/tests/review-bundle.test.mjs
 ```
 
-Full local validation invokes installed `ffprobe` and `ffmpeg` without shell
-interpolation, with bounded time/output. It checks decoded dimensions, H.264/
-yuv420p, duration, and a complete visual-stream decode. A missing/failed tool
-fails validation. `--integrity-only` explicitly skips decoding and returns
-`media_decode: not verified`; it is a diagnostic, not a capture acceptance gate.
-Container/hash validation alone does not prove a decodable or meaningful clip.
-The helper always reports source provenance and behavior review as unverified
-by the helper; the agent must supply those distinct evidence layers.
+Put the computed key in publication.key before validation. The full validator
+counts decoded frames, checks dimensions/codec/duration and decodes the whole
+visual stream using bounded ffprobe/ffmpeg subprocesses. Missing/failed tools
+fail media validation. Integrity-only mode is a diagnostic explicitly marked
+not verified. Neither decoding nor hashes establish semantic/visual correctness.
 
-## Capture and workflow integration
+## Publish and retain a receipt
 
-Keep GitHub operations in `gh`/Git. Supported application capture and Sites
-operations may use their own native tools. Never replace GitHub ownership,
-feedback or review-state handling with browser automation.
+Refresh native Sites metadata immediately before invocation (maximum age
+120 seconds). Verify ID, canonical origin, owner role and owner-only audience.
+Do not print metadata containing the service credential. Pass it via hidden
+stdin as one JSON line with keys `native_site` and `metadata_read_at`.
+The native service token may instead be injected under the configured
+service_token_env name after the same metadata verification.
 
-1. Verify authorized repository/PR scope and current head/base identities.
-   Preserve unrelated work. Capture from the final committed source and verify
-   the running application's build provenance, not just checkout cleanliness.
-2. Demonstrate one actual changed behavior with sanitized inputs. Prefer real
-   before/after screenshots; otherwise explain an after-only capture. Capture
-   roughly 8–15 seconds of the user interaction and observable result, readable
-   on a phone. Generated imagery, staged slides or passing test text do not
-   demonstrate a changed UI. Nonvisual changes use semantic output evidence.
-3. Decode and inspect finalized screenshots/video. Rehash after redaction or
-   encoding; retain local provenance. A successful decoder does not verify the
-   scenario. Do not put real media or raw logs in this public repository.
-4. Extend the existing acceptance ledger with source/build, capture, decode,
-   semantic/visual review, and intended-user delivery evidence. Missing UI
-   tooling is `not verified`, not `not applicable`.
-5. Optional delivery occurs only after the existing clean ready window. If
-   hosted evidence is required acceptance, publish and verify it while draft,
-   then enter the existing ready transition. Refresh head/status after the full
-   60-second window. Evidence must be replaced or explicitly stale/unknown when
-   the head changes. Neither publication nor capture resets the two correction
-   passes/three windows, scope, ownership, or explicit merge authorization.
-6. Report the actual PR state separately from delivery. Optional upload failure
-   preserves the verified code state and local evidence. Required missing
-   hosted evidence remains unverified and follows existing blocking rules.
-   Use `Refs` while any material criterion is outstanding. A physical-phone
-   check can be a specific human-only handoff; emulation never proves it.
+Inject the publisher secret under publisher_key_env, or through hidden stdin
+as publisher_key. On Windows the supplied vault helper stores it per user in
+Windows Credential Manager without printing it:
 
-## Next rollout gates (not yet implemented)
+```text
+python process-issues/scripts/review-publisher-vault.py store SITE_ID
+python process-issues/scripts/review-publisher-vault.py run CONFIG REPO_ROOT MANIFEST ASSET_DIR
+```
 
-Prove an authenticated synthetic upload/read-back from the actual runtime to
-the registered private Site before building the gallery. Verify canonical
-origin, owner-private audience, service credential, and separate server-side
-publisher boundary. Do not forward credentials through redirects or copy them
-to source, shell arguments, logs or browser code. A capability/read check and
-binary roundtrip must include signed-out direct media GET/HEAD/ranges.
+Store accepts hidden JSON containing publisher_key. It refuses to overwrite a
+different existing key. Run accepts only native metadata, retrieves the key,
+and passes it to the child process environment. Use the same normal Windows
+user as the intended operator. No key is written to configuration or a file.
 
-Then implement one proven transport: bounded multipart upload, immutable R2
-assets, atomic D1 metadata promotion with per-PR CAS, publication-key lookup for
-ambiguous timeouts, historical revisions, guarded observation refresh, durable
-receipts, and publish-only retries. Do not blindly replace a CAS version after
-a conflict: refresh GitHub and check promotion eligibility. Recheck the head
-after upload; update stale/unknown status without demoting newer evidence.
+On other systems use an existing secure environment injection mechanism:
 
-Build the mobile gallery against persisted records with project/PR deep links,
-screenshots, controlled inline video, actual results and explicit freshness.
-Protected media must survive reload/redeploy and support private HEAD/range
-responses. Validate a real PR from this manually invoked workflow, then hand
-off the exact phone URL and play/pause/seek/screenshot/GitHub-link checks.
+```text
+node --use-system-ca process-issues/scripts/review-publish-cli.mjs CONFIG REPO_ROOT MANIFEST ASSET_DIR
+```
 
-Current native Sites guidance is installed with its skill; read its storage,
-identity/service-access and source/deployment references before resuming.
-Platform documentation: [data and files](https://learn.chatgpt.com/docs/sites/data-and-connections),
-[publishing and sharing](https://learn.chatgpt.com/docs/sites/publishing-and-sharing).
-These document platform building blocks, not proof that this integration works.
+The tested Windows runtime needed --use-system-ca to use the OS trust store.
+Never disable certificate checks. Disabled configuration returns before reading
+credentials or making network calls.
+
+The CLI validates local media, verifies the repository/PR head/base identities
+with gh, discovers live limits, and looks up the publication key before writing.
+It uploads bounded multipart to the fixed verified origin with redirects
+disabled. It never fetches URLs supplied in a manifest or receipt. It verifies
+stored asset bytes, rechecks GitHub, applies a guarded observation update and
+writes a durable ignored receipt containing canonical project/review URLs and
+the exact tested SHA. Report only links returned by this verified operation.
+
+Reads require platform visitor identity or the publisher credential. Writes
+additionally require the application key and reject browser Origin/Cookie
+requests. Viewer access alone never grants write access. The gallery escapes
+text and uses only validated GitHub links and same-origin media routes.
+
+## Recovery, concurrency and freshness
+
+R2 objects are immutable by publication key/asset ID/hash. D1 batches record
+the immutable publication and compare-and-swap the per-PR current pointer.
+A failed asset/database step cannot replace the previous successful review.
+Unreferenced objects may remain after failure; broad cleanup is out of scope.
+
+An identical retry returns the same publication. After an ambiguous upload or
+server error the client looks up the key once before considering another run;
+it never blindly resubmits. A later run can publish the same finalized bundle
+without rerunning implementation or capture. CAS conflict requires a fresh
+GitHub/state assessment; do not blindly replace a version. Different PRs and
+repositories have separate current pointers. Older observations cannot
+overwrite newer ones; stale evidence remains historical when current evidence
+exists. SHAs are identities, not chronological ordering.
+
+The final GitHub read establishes freshness only as of its timestamp. A changed
+head is stale; an unavailable head or failed observation refresh is unknown.
+A failed final delivery/read-back retains server state and local evidence but
+does not return a verified-delivery success; retry reconciles by key. No
+automatic polling silently refreshes the gallery.
+
+Optional publication occurs after the existing clean 60-second ready window.
+Required evidence is captured/published/verified while draft, before entering
+that transition. Refresh head/status after the window; replace or explicitly
+invalidate stale evidence. Capture/publication never resets the two correction
+passes, three ready windows, ownership limits or explicit merge authorization.
+
+Missing optional media does not erase independently verified code evidence.
+Missing required media/delivery stays not verified and follows existing draft/
+blocked rules. Use Refs while material acceptance remains outstanding. A
+physical-phone-only step may be an explicit human handoff when permitted; do
+not claim device verification from emulation.
+
+## Review and add another project
+
+Open the returned PR deep link as the intended signed-in viewer. Confirm the
+summary, tested SHA, actual results, provenance and stale/unknown labeling.
+Check screenshots full-size, video play/pause/seek and GitHub navigation.
+Reload and check persisted history; repeat after a deploy to establish
+durability. On the intended physical phone also inspect narrow-screen layout,
+text/media sizing and controls. Record each check and exact remaining action.
+
+For another repository, opt in with its verified host/numeric ID, the same
+retained Site identity and safe local configuration/storage. Reuse authorized
+credential storage; do not create another Site or share project secrets.
+The first successful publication creates its project view automatically.
+
+## Focused verification
+
+```text
+node --test process-issues/tests/review-bundle.test.mjs process-issues/tests/review-service.test.mjs process-issues/tests/review-publish.test.mjs
+```
+
+Run the skill validator and git diff --check as applicable. Build the overlay
+with the current Sites starter's documented workflow. Evaluate
+`tests/review-site-workflow-scenarios.md` separately from executable tests.
+Capture, browser appearance, intended-user login and phone playback require
+runtime evidence; unit tests cannot establish them.

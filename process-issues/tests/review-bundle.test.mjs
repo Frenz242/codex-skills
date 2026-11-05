@@ -55,7 +55,7 @@ test('byte/hash/type/dimension and truncated image checks',async()=>{
   await assert.rejects(validateAssetBytes({...a,bytes:truncated.length,sha256:await digest(truncated)},truncated));
 });
 test('asset order does not change publication key; duplicate IDs do not validate',async()=>{
-  const m=await fixture(),a=await imageAsset();m.assets=[a,{...a,id:'before',role:'before',filename:'before.png'}];
+  const m=await fixture(),a=await imageAsset();m.demonstration.capture_source='codex-terminal';m.assets=[a,{...a,id:'before',role:'before',filename:'before.png'}];
   const key=await publicationKey(m);m.assets.reverse();assert.equal(await publicationKey(m),key);
   m.assets[0].id=m.assets[1].id;await seal(m);await assert.rejects(validateManifest(m));
 });
@@ -94,7 +94,7 @@ test('full decoder validates real synthetic PNG/MP4 and rejects damaged frames',
     const image=path.join(assets,'after.png'),video=path.join(assets,'demo.mp4');
     generate(['-f','lavfi','-i','color=c=blue:s=64x64','-frames:v','1',image]);
     generate(['-f','lavfi','-i','testsrc2=s=64x64:r=5','-t','2','-c:v','libx264','-pix_fmt','yuv420p','-movflags','+faststart',video]);
-    const m=await fixture();m.revision.build_sha=m.revision.head_sha;m.demonstration.kind='ui';m.demonstration.state='verified';m.demonstration.limitation='Synthetic media fixture only';
+    const m=await fixture();m.revision.build_sha=m.revision.head_sha;m.demonstration.kind='ui';m.demonstration.surface='web';m.demonstration.capture_source='codex-browser';m.demonstration.state='verified';m.demonstration.limitation='Synthetic media fixture only; provenance assertion is simulated, not a real capture';
     m.assets=[];
     for(const [file,id,role,mime,duration_ms,codec] of [[image,'after','after','image/png',null,null],[video,'demo','demonstration','video/mp4',2000,'h264']]){
       const bytes=await readFile(file);m.assets.push({id,role,filename:path.basename(file),mime,bytes:bytes.length,sha256:await digest(bytes),caption:'Synthetic decoder fixture',width:64,height:64,duration_ms,codec});
@@ -123,4 +123,14 @@ test('config inspection enforces ignored, untracked output with no writes',async
     await assert.rejects(lstat(path.join(root,'.codex','review-evidence')),{code:'ENOENT'});
     git(['add','-f','.codex/review-site.local.json']);await assert.rejects(inspectConfig(file,root));
   } finally {await rm(root,{recursive:true,force:true});}
+});
+
+test('capture source follows the actual project surface',async()=>{
+ const m=await fixture();m.demonstration.kind='ui';m.demonstration.state='not verified';m.demonstration.surface='web';
+ m.demonstration.capture_source='authorized-computer-use';await seal(m);await assert.rejects(validateManifest(m),/capture source/);
+ m.demonstration.capture_source='codex-browser';await seal(m);await validateManifest(m);
+ m.demonstration.surface='terminal';m.demonstration.capture_source='codex-terminal';await seal(m);await validateManifest(m);
+ m.demonstration.capture_source='other-terminal';m.demonstration.limitation='';await seal(m);await assert.rejects(validateManifest(m),/fallback reason/);
+ m.demonstration.limitation='Built-in terminal unavailable; authorized terminal used';await seal(m);await validateManifest(m);
+ m.demonstration.surface='other';m.demonstration.capture_source='authorized-computer-use';await seal(m);await validateManifest(m);
 });

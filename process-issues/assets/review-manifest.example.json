@@ -79,11 +79,13 @@
     "outcome": "Expected output is documented in the fixture",
     "tool": "synthetic fixture",
     "source_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "limitation": "No UI; no video is needed"
+    "limitation": "No UI; no video is needed",
+    "surface": "nonvisual",
+    "capture_source": "none"
   },
   "assets": [],
   "publication": {
-    "key": "github.example:101:7:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:c761b0d2d2362c7fb3bfb8b000fd9238027f940e7a9a5bafc1c6de66d961bf7c",
+    "key": "github.example:101:7:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:c1f9614c6ec060e87a61fdac00e50b12512a88f0ca85f530cd11a264daf01382",
     "expected_current_version": 0,
     "prepared_at": "2026-01-01T00:00:00Z"
   }

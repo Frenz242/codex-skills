@@ -114,8 +114,16 @@ export async function validateManifest(m) {
   requireThat(Array.isArray(m.acceptance) && m.acceptance.length > 0 && m.acceptance.length <= 60, 'acceptance: nonempty bounded list required');
   m.acceptance.forEach(evidence);
   const d = m.demonstration;
-  object(d, 'demonstration', ['kind','state','scenario','outcome','tool','source_sha','limitation']);
+  object(d, 'demonstration', ['kind','surface','capture_source','state','scenario','outcome','tool','source_sha','limitation']);
   requireThat(['ui','nonvisual'].includes(d.kind) && STATES.includes(d.state), 'demonstration: invalid kind/state');
+  requireThat(['web','terminal','other','nonvisual'].includes(d.surface), 'demonstration: invalid surface');
+  requireThat(['codex-browser','codex-terminal','authorized-computer-use','other-terminal','none'].includes(d.capture_source), 'demonstration: invalid capture source');
+  requireThat(d.surface !== 'web' || d.kind === 'ui', 'web demonstration must be UI evidence');
+  if (d.capture_source !== 'none') {
+    const sources = {web:['codex-browser'],terminal:['codex-terminal','other-terminal'],other:['authorized-computer-use'],nonvisual:['codex-terminal','other-terminal']};
+    requireThat(sources[d.surface].includes(d.capture_source), 'capture source does not match project surface');
+    if (d.capture_source === 'other-terminal') text(d.limitation, 'built-in terminal fallback reason');
+  }
   for (const k of ['scenario','outcome','tool']) text(d[k], `demonstration.${k}`);
   requireThat(d.source_sha === r.head_sha, 'demonstration source does not match tested SHA');
   requireThat(typeof d.limitation === 'string' && d.limitation.length <= 4000, 'demonstration: limitation required');
@@ -128,7 +136,7 @@ export async function validateManifest(m) {
   const ids = new Set(), names = new Set(); let total = 0;
   for (const a of m.assets) {
     object(a, 'asset', ['id','role','filename','mime','bytes','sha256','caption','width','height','duration_ms','codec']);
-    requireThat(typeof a.id === 'string' && /^[a-z][a-z0-9-]{0,63}$/.test(a.id) && !ids.has(a.id), 'asset: invalid/duplicate ID'); ids.add(a.id);
+    requireThat(typeof a.id === 'string' && /^[a-z][a-z0-9-]{0,63}$/.test(a.id) && a.id !== 'manifest' && !ids.has(a.id), 'asset: invalid/duplicate ID'); ids.add(a.id);
     requireThat(typeof a.filename === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}\.(png|mp4|txt|json)$/.test(a.filename)
       && !/^(con|prn|aux|nul|com[0-9]|lpt[0-9])\./i.test(a.filename) && !names.has(a.filename.toLowerCase()), 'asset: unsafe/duplicate filename'); names.add(a.filename.toLowerCase());
     requireThat(['before','after','screenshot','poster','demonstration','output'].includes(a.role), 'asset: invalid role');
@@ -143,6 +151,8 @@ export async function validateManifest(m) {
       integer(a.duration_ms, 'duration', 1000, 30000); requireThat(a.codec === 'h264' && a.role === 'demonstration', 'video: H.264 demonstration required');
     } else requireThat(a.duration_ms === null && a.codec === null, 'non-video: invalid codec/duration');
   }
+  if (m.assets.some(a => a.mime === 'image/png' || a.mime === 'video/mp4'))
+    requireThat(d.capture_source !== 'none', 'media requires capture provenance');
   requireThat(total <= LIMITS.bundle, 'bundle too large');
   if (d.kind === 'ui' && d.state === 'verified') requireThat(m.assets.some(a => a.mime === 'image/png' && a.role !== 'poster') &&
     m.assets.some(a => a.mime === 'video/mp4'), 'verified UI demonstration needs screenshots and video');
