@@ -231,7 +231,11 @@ An identical retry returns the same publication. After an ambiguous upload,
 unreadable response body or
 server error the client looks up the key once before considering another run;
 it never blindly resubmits. A later run can publish the same finalized bundle
-without rerunning implementation or capture. CAS conflict requires a fresh
+without rerunning implementation or capture. If a concurrent upload retained
+the bundle as history, a later run reconciles its current-pointer eligibility
+with fresh GitHub and Site state through a metadata-only POST. Stored media
+is reused; older captures and stale heads cannot displace newer evidence.
+Deploy the updated service before using this retry path. CAS conflict requires a fresh
 GitHub/state assessment; do not blindly replace a version. Different PRs and
 repositories have separate current pointers. Older observations cannot
 overwrite newer ones; stale evidence remains historical when current evidence

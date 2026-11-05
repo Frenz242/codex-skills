@@ -85,3 +85,19 @@ test('falsy promise rejections still fail capture',async()=>{
   const step=await c.step({tab,name:'rejected',action:()=>Promise.reject(undefined)});
   assert.equal(step.status,'failed');assert.equal((await c.finish()).status,'failed');
 });
+
+
+test('exactly thirty seconds encodes within the limit and retains the last frame',async()=>{
+ const first=path.join(root,'boundary-first.jpg'),last=path.join(root,'boundary-last.jpg');
+ for(const [file,color] of [[first,'blue'],[last,'red']]){
+  const r=spawnSync('ffmpeg',['-v','error','-f','lavfi','-i','color=c='+color+':s=32x32','-frames:v','1',file]);
+  assert.equal(r.status,0,String(r.stderr));
+ }
+ const c=await createCapture({directory:folder(),sourceSha:sha,fps:2,maxFrames:60,framesPerStep:2});
+ for(let step=0;step<30;step++)await c.step({tab:{screenshot:async()=>new Uint8Array(await readFile(step===29?last:first))},name:'step-'+step,action:async()=>{}});
+ const capture=await c.finish();assert.equal(capture.status,'captured');
+ const out=folder(),encoded=await encodeCapture(capture.manifest,out,sha);
+ assert.equal(encoded.assets[0].duration_ms,30000);
+ const tail=spawnSync('ffmpeg',['-v','error','-ss','29.9','-i',path.join(out,'assets','navigation.mp4'),'-vf','crop=1:1:640:450,format=rgb24','-frames:v','1','-f','rawvideo','-']);
+ assert.equal(tail.status,0,String(tail.stderr));assert.ok(tail.stdout[0]>200&&tail.stdout[1]<50&&tail.stdout[2]<50,'last frame remains red');
+});

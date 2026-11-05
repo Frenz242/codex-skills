@@ -106,11 +106,34 @@ test('older capture of the same commit stays historical after refreshing the sto
  const older=structuredClone(m);older.revision.captured_at='2026-01-02T00:00:00Z';older.summary.changed='Old capture retried later';older.observed_github.observed_at='2026-01-04T00:00:00Z';older.publication.expected_current_version=1;older.publication.key=await publicationKey(older);
  const receipt=await (await upload(env,older,bytes)).json();assert.equal(receipt.disposition,'historical');
  let rows=await (await call(env,'reviews?project=github.example%3A101')).json();assert.equal(rows.reviews[0].publication_key,m.publication.key);
+ older.publication.expected_current_version=receipt.version;
  assert.equal((await (await upload(env,older,bytes)).json()).disposition,'historical');
  const newer=structuredClone(older);newer.revision.captured_at='2026-01-05T00:00:00Z';newer.publication.expected_current_version=receipt.version;newer.publication.key=await publicationKey(newer);
  assert.equal((await (await upload(env,newer,bytes)).json()).disposition,'current');
  // Capture time orders evidence for the same commit, never different Git heads.
  const next=structuredClone(newer);next.revision.head_sha='d'.repeat(40);next.demonstration.source_sha=next.revision.head_sha;next.observed_github.head_sha=next.revision.head_sha;next.revision.captured_at='2026-01-01T00:00:00Z';next.publication.expected_current_version=3;next.publication.key=await publicationKey(next);
  assert.equal((await (await upload(env,next,bytes)).json()).disposition,'current');
+ }finally{env.close();}
+});
+
+
+test('multipart retry promotes a retained concurrent capture without uploading bytes again',async()=>{
+ const env=storage();try{
+  const {m,bytes}=await bundle(),n=structuredClone(m);
+  n.revision.captured_at='2026-01-02T00:00:00Z';n.publication.key=await publicationKey(n);
+  const batch=env.DB.batch.bind(env.DB);let count=0,release;const gate=new Promise(r=>release=r);
+  env.DB.batch=async statements=>{if(++count===2)release();await gate;return batch(statements);};
+  const responses=await Promise.all([upload(env,m,bytes),upload(env,n,bytes)]);
+  assert.deepEqual(responses.map(r=>r.status),[200,409]);
+  n.publication.expected_current_version=1;
+  const objects=env.objects.size;
+  env.BUCKET.put=()=>{throw Error('Retry must reuse stored media');};
+  const result=await (await upload(env,n,bytes)).json();
+  assert.equal(result.disposition,'current');assert.equal(result.version,2);assert.equal(env.objects.size,objects);
+  const body={expected_current_version:1,observed_github:n.observed_github};
+  const route='publications/'+encodeURIComponent(m.publication.key);
+  assert.equal((await call(env,route,{method:'POST',body:JSON.stringify(body)})).status,409);
+  body.expected_current_version=2;body.observed_github.observed_at='2025-01-01T00:00:00Z';
+  assert.equal((await call(env,route,{method:'POST',body:JSON.stringify(body)})).status,409);
  }finally{env.close();}
 });

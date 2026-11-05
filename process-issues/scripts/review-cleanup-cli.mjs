@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import {readFile,writeFile,mkdir,realpath,readdir,lstat,rename} from 'node:fs/promises';
 import path from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {loadConfig,inspectConfig} from './review-bundle-cli.mjs';
@@ -12,13 +13,15 @@ function gh(args,cwd) {
  const r=spawnSync('gh',args,{cwd,encoding:'utf8',timeout:30000,maxBuffer:4*1024*1024,windowsHide:true});
  check(!r.error&&r.status===0,'GitHub read failed; inspect authentication/network separately');return JSON.parse(r.stdout);
 }
-async function main() {
- const [mode,configFile,repoRoot,...rest]=process.argv.slice(2);
+export async function runCleanup(args,{github=gh,readSecrets=secretInput,fetchImpl=fetch}={}) {
+ const [mode,configFile,repoRoot,...rest]=args;
  check(['register','run'].includes(mode)&&configFile&&repoRoot,'Usage: review-cleanup-cli.mjs register CONFIG REPO PR DIRECTORY | run CONFIG REPO [--apply]');
  const c=await loadConfig(configFile);
  if(!c.enabled||!c.cleanup?.merged_prs)return {status:'disabled',site_mutations:0};
  await inspectConfig(configFile,repoRoot);
- const root=await realpath(repoRoot),output=await realpath(path.join(root,c.output_directory)),project=c.repository.host+':'+c.repository.id;
+ const root=await realpath(repoRoot),project=c.repository.host+':'+c.repository.id;
+ let output=path.resolve(root,c.output_directory),outputExists=true;
+ try{output=await realpath(output);}catch(e){if(e.code!=='ENOENT')throw e;outputExists=false;}
  if(mode==='register') {
   check(rest.length===2&&/^[1-9][0-9]*$/.test(rest[0]),'PR number and dedicated evidence directory required');
   const folder=await realpath(rest[1]);await assertEvidenceDirectory(output,folder);
@@ -28,7 +31,7 @@ async function main() {
   return {status:'registered',pr_key:project+':'+rest[0]};
  }
  check(rest.length===0||rest.length===1&&rest[0]==='--apply','Only --apply is supported');
- const apply=rest[0]==='--apply',folders=await discoverLocalEvidence(output),pending=new Map();
+ const apply=rest[0]==='--apply',folders=outputExists?await discoverLocalEvidence(output):[],pending=new Map();
  const publicationReceipts=await findPublicationReceipts(output);
  const receipts=path.join(output,'cleanup-receipts'),sweepFile=path.join(receipts,'sweep.json');
  try {
@@ -43,11 +46,11 @@ async function main() {
  let sweepState={};
  try {check(!(await lstat(sweepFile)).isSymbolicLink(),'Sweep receipt cannot be linked');sweepState=JSON.parse(await readFile(sweepFile,'utf8'));}
  catch(e){if(e.code!=='ENOENT')throw e;}
- const repo=gh(['repo','view','--json','nameWithOwner,url'],root);
- const identity=gh(['api','--hostname',c.repository.host,'repos/'+repo.nameWithOwner],root);
+ const repo=github(['repo','view','--json','nameWithOwner,url'],root);
+ const identity=github(['api','--hostname',c.repository.host,'repos/'+repo.nameWithOwner],root);
  check(identity.id===c.repository.id&&identity.html_url===repo.url&&new URL(repo.url).hostname===c.repository.host,'Configured repository does not match checkout');
  const observe=async(pr)=>{
-  const number=pr.split(':').at(-1),p=gh(['api','--hostname',c.repository.host,'repos/'+repo.nameWithOwner+'/pulls/'+number],root);
+  const number=pr.split(':').at(-1),p=github(['api','--hostname',c.repository.host,'repos/'+repo.nameWithOwner+'/pulls/'+number],root);
   check(p.number===Number(number)&&p.base.repo.id===c.repository.id,'GitHub PR repository mismatch');
   return {pr_key:pr,state:p.merged_at?'merged':p.state,merged_at:p.merged_at,checked_at:new Date().toISOString()};
  };
@@ -77,10 +80,10 @@ async function main() {
   if(doApply)await save({schema_version:1,pr_key:pr,status:'complete',completed_at:new Date().toISOString()});
   return {status:doApply?'complete':'planned',directories:dirs.length,files};
  };
- const input=await secretInput();
+ const input=await readSecrets();
  if(input.native_site&&!input.native_site.siwc_bypass_bearer_token)input.native_site.siwc_bypass_bearer_token=process.env[c.auth.service_token_env];
  const result=await cleanupEvidence({config:c,site:input.native_site,metadataReadAt:input.metadata_read_at,
-  publisherKey:input.publisher_key||process.env[c.auth.publisher_key_env],observe,apply,
+  publisherKey:input.publisher_key||process.env[c.auth.publisher_key_env],observe,apply,fetchImpl,
   localPrKeys:[...folders.map(f=>f.pr_key),...publicationReceipts.map(r=>r.pr_key),...pending.keys()].filter(k=>k.startsWith(project+':')),cleanLocal,sweepState});
  if(apply){
   await inspectConfig(configFile,root,[sweepFile]);await mkdir(receipts,{recursive:true});
@@ -90,5 +93,7 @@ async function main() {
  }
  return result;
 }
-try{console.log(JSON.stringify(await main(),null,2));}
+if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
+try{console.log(JSON.stringify(await runCleanup(process.argv.slice(2)),null,2));}
 catch(e){console.error(JSON.stringify({ok:false,error:e.code?'Cleanup input/storage operation failed; retained receipts support retry':e.message}));process.exitCode=1;}
+}

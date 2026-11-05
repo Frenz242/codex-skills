@@ -101,3 +101,7 @@ node --test process-issues/tests/review-cleanup.test.mjs process-issues/tests/re
 Exercise deletion and races with isolated synthetic storage. A live deployment
 check can preview maintenance and prove that an actual open PR is preserved;
 do not invent merged PRs or mutate GitHub to manufacture deletion evidence.
+
+A missing configured local output directory is an empty local inventory, not
+a reason to skip hosted cleanup. Dry runs leave it absent; applying cleanup
+creates only the validated receipt storage needed to record progress.

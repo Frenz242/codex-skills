@@ -34,6 +34,10 @@ export async function publishReview({config,manifest,assets,site,metadataReadAt,
  // observe must verify repository ID, PR number, head/base repos and refs via gh.
  m.observed_github=await observe();
  let result=await expect(await request('publications/'+encodeURIComponent(m.publication.key)),true);
+ if(result?.disposition==='historical'){
+  const current=await expect(await request('review?pr='+encodeURIComponent(id.pr_key)));
+  result=await expect(await request('publications/'+encodeURIComponent(m.publication.key),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({expected_current_version:current.version,observed_github:m.observed_github})}));
+ }
  if(!result){
   const current=await expect(await request('review?pr='+encodeURIComponent(id.pr_key)),true);
   m.publication.expected_current_version=current?.version||0;

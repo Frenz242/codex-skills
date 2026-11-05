@@ -50,7 +50,7 @@ export async function encodeCapture(manifestFile,outputDirectory,sourceSha) {
   const video=path.join(assets,'navigation.mp4');
   run('ffmpeg',['-v','error','-nostdin','-f','concat','-safe','0','-i',listing,
     '-vf','scale=1280:900:force_original_aspect_ratio=decrease:in_range=full:out_range=limited,pad=1280:900:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p',
-    '-r','30','-c:v','libx264','-preset','medium','-crf','20','-color_range','tv',
+    '-r','30','-t',String(capture.frames.length/capture.fps),'-c:v','libx264','-preset','medium','-crf','20','-color_range','tv',
     '-an','-movflags','+faststart',video]);
   const descriptors=[];
   const describe=async(file,role)=>{

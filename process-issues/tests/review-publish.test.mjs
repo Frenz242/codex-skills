@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {publishReview,verifySite} from '../scripts/review-publish.mjs';
 import {handleReview} from '../scripts/review-service.mjs';
+import {publicationKey} from '../scripts/review-bundle.mjs';
 import {fixture} from './fixtures/review-bundles.mjs';
 import {storage} from './fixtures/review-storage.mjs';
 const origin='https://review.example.chatgpt.site';
@@ -72,3 +73,28 @@ test('known authorization and conflict failures do not trigger ambiguous-upload 
   }finally{env.close();}
  }
 });
+
+
+for(const newerFirst of [false,true])for(const differentHead of [false,true]){
+ test(`retry concurrent ${differentHead?'Git head':'capture'} with newer first=${newerFirst} selects newest evidence without media upload`,async()=>{
+  const env=storage();try{
+   const old=await input(env),next=await input(env);
+   next.manifest.revision.captured_at='2026-01-02T00:00:00Z';
+   if(differentHead){next.manifest.revision.head_sha='c'.repeat(40);next.manifest.demonstration.source_sha=next.manifest.revision.head_sha;next.manifest.observed_github.head_sha=next.manifest.revision.head_sha;}
+   next.manifest.publication.key=await publicationKey(next.manifest);
+   const batch=env.DB.batch.bind(env.DB);let count=0,release;const gate=new Promise(r=>release=r);
+   env.DB.batch=async statements=>{if(++count===2)release();await gate;return batch(statements);};
+   const ordered=newerFirst?[next,old]:[old,next];
+   const results=await Promise.allSettled(ordered.map(i=>publishReview(i)));
+   assert.equal(results[0].status,'fulfilled');assert.equal(results[1].status,'rejected');assert.match(results[1].reason.message,/conflict/);
+   const retry=ordered[1],transport=retry.fetchImpl;
+   let uploads=0,reconciliations=0;
+   retry.observe=async()=>({...next.manifest.observed_github,observed_at:new Date().toISOString()});
+   retry.fetchImpl=(url,options)=>{if(options.method==='POST'){if(url.endsWith('/publications'))uploads++;else reconciliations++;}return transport(url,options);};
+   const receipt=await publishReview(retry);
+   assert.equal(receipt.disposition,newerFirst?'historical':'current');assert.equal(uploads,0);assert.equal(reconciliations,1);
+   assert.equal(env.sql.prepare('SELECT current_key FROM reviews').get().current_key,next.manifest.publication.key);
+   assert.equal(env.sql.prepare('SELECT COUNT(*) AS n FROM publications').get().n,2);
+  }finally{env.close();}
+ });
+}

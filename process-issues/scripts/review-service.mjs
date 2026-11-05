@@ -34,6 +34,32 @@ function receipt(record,current,status='published'){
  project_path:base,review_path:base+'&pr='+m.pull_request.number,asset_hashes:m.assets.map(a=>({id:a.id,sha256:a.sha256})),
  freshness:freshness(m,observation)};
 }
+async function eligible(db,current,m,observed){
+ const stored=current?.current_key?await publication(db,current.current_key):null;
+ const revision=stored?JSON.parse(stored.manifest).revision:null;
+ const older=revision?.head_sha===m.revision.head_sha&&Date.parse(m.revision.captured_at)<Date.parse(revision.captured_at);
+ return !older&&(observed.head_sha===m.revision.head_sha||!current?.current_key);
+}
+async function reconcile(env,record,expected,observed){
+ const db=env.DB,pr=record.pr_key;
+ if(await stmtCleanup(db,pr))fail(410,'Merged PR evidence has been cleaned');
+ const current=await review(db,pr),m=JSON.parse(record.manifest);
+ if(current?.current_key===record.publication_key)return json(receipt(record,current,'unchanged'));
+ if((current?.version||0)!==expected)fail(409,'Metadata version changed; refresh Site and GitHub before retrying');
+ if(current&&Date.parse(observed.observed_at)<Date.parse(JSON.parse(current.observation).observed_at))fail(409,'GitHub observation is older than stored state');
+ if(!await eligible(db,current,m,observed))return json(receipt(record,current,'unchanged'));
+ const changed=await statement(db,'UPDATE reviews SET version=version+1,current_key=?,observation=?,repository=?,updated_at=? WHERE pr_key=? AND version=? AND EXISTS(SELECT 1 FROM publications WHERE publication_key=?) AND NOT EXISTS(SELECT 1 FROM cleanup_receipts WHERE pr_key=?)',record.publication_key,JSON.stringify(observed),JSON.stringify(m.repository),new Date().toISOString(),pr,expected,record.publication_key,pr).run();
+ if(changed.meta.changes!==1)fail(409,'Reconciliation conflict; refresh Site and GitHub');
+ return json(receipt(record,await review(db,pr),'unchanged'));
+}
+async function reconcileRequest(request,env,key){
+ if(!keyOK(key))fail(400,'Invalid publication key');
+ const b=await readJson(request);
+ if(!b||Object.keys(b).sort().join(',')!=='expected_current_version,observed_github'||!Number.isSafeInteger(b.expected_current_version)||b.expected_current_version<1)fail(422,'Invalid publication reconciliation');
+ try{validateObservation(b.observed_github);}catch(e){fail(422,e.message);}
+ const record=await publication(env.DB,key);if(!record)fail(404,'Publication not found');
+ return reconcile(env,record,b.expected_current_version,b.observed_github);
+}
 async function publish(request,env){
  const raw=await boundedBody(request,CAPABILITIES.max_request_bytes);
  let form;try{form=await new Response(raw,{headers:{'Content-Type':request.headers.get('Content-Type')||''}}).formData();}catch{fail(400,'Multipart form required');}
@@ -49,7 +75,7 @@ async function publish(request,env){
  const db=env.DB,key=m.publication.key,pr=identity.pr_key;
  if(await stmtCleanup(db,pr))fail(410,'Merged PR evidence has been cleaned');
  const existing=await publication(db,key);
- if(existing)return json(receipt(existing,await review(db,pr),'unchanged'));
+ if(existing)return reconcile(env,existing,m.publication.expected_current_version,m.observed_github);
  const current=await review(db,pr),expected=m.publication.expected_current_version;
  if((current?.version||0)!==expected)fail(409,'Metadata version changed; refresh Site and GitHub before retrying');
  const previousObservation=current?JSON.parse(current.observation):null;
@@ -60,11 +86,7 @@ async function publish(request,env){
  try {
  for(const [a,bytes] of files)await env.BUCKET.put(prefix+a.id+'/'+a.sha256,bytes,{httpMetadata:{contentType:a.mime}});
 
- const currentPublication=current?.current_key?await publication(db,current.current_key):null;
- const currentRevision=currentPublication?JSON.parse(currentPublication.manifest).revision:null;
- const olderCapture=currentRevision?.head_sha===m.revision.head_sha&&
-  Date.parse(m.revision.captured_at)<Date.parse(currentRevision.captured_at);
- const promote=!olderCapture&&(m.observed_github.head_sha===m.revision.head_sha||!current?.current_key);
+ const promote=await eligible(db,current,m,m.observed_github);
  const now=new Date().toISOString(),nextKey=promote?key:current.current_key;
  const result=await db.batch([
   statement(db,"INSERT OR IGNORE INTO publications(publication_key,pr_key,project_key,manifest,created_at,storage_prefix) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM upload_jobs WHERE storage_prefix=? AND state='uploading' AND expires_at>?) AND NOT EXISTS(SELECT 1 FROM cleanup_receipts WHERE pr_key=?)",key,pr,identity.project_key,JSON.stringify(m),now,prefix,prefix,now,pr),
@@ -129,6 +151,7 @@ export async function handleReview(request,env){
   if(p[0]==='cleanup'){if(!writer)fail(403,'Publisher authority required');return await handleCleanup(request,env,p,u,readJson);}
   if(p[0]==='capabilities'&&request.method==='GET')return json({...CAPABILITIES,publisher:writer});
   if(p[0]==='publications'&&p.length===1&&request.method==='POST')return await publish(request,env);
+  if(p[0]==='publications'&&p.length===2&&request.method==='POST')return await reconcileRequest(request,env,p[1]);
   if(p[0]==='publications'&&p.length===2&&request.method==='GET'){
    if(!keyOK(p[1]))fail(400,'Invalid publication key');const row=await publication(env.DB,p[1]);if(!row)fail(404,'Publication not found');return json(receipt(row,await review(env.DB,row.pr_key),'unchanged'));
   }

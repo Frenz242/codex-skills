@@ -4,6 +4,8 @@ import {mkdtemp,mkdir,writeFile,readFile,lstat,symlink,readdir} from 'node:fs/pr
 import path from 'node:path';
 import {tmpdir} from 'node:os';
 import {handleReview} from '../scripts/review-service.mjs';
+import {runCleanup} from '../scripts/review-cleanup-cli.mjs';
+import {spawnSync} from 'node:child_process';
 import {cleanupEvidence} from '../scripts/review-cleanup.mjs';
 import {markEvidenceDirectory,discoverLocalEvidence,removeLocalEvidence} from '../scripts/review-cleanup-local.mjs';
 import {validateConfig,publicationKey,digest} from '../scripts/review-bundle.mjs';
@@ -193,5 +195,31 @@ test('client does not busy-poll an active upload',async()=>{
   let calls=0;const fetch=i.fetchImpl;i.fetchImpl=(u,o)=>{if(u.endsWith('cleanup/merged'))calls++;return fetch(u,o);};
   const result=await cleanupEvidence(i);
   assert.equal(result.results[0].status,'pending');assert.equal(calls,1);
+ }finally{env.close();}
+});
+
+
+test('cleanup CLI handles absent local output: dry-run stays read-only and apply deletes hosted evidence',async()=>{
+ const env=storage();try{
+  const root=await mkdtemp(path.join(tmpdir(),'review-cleanup-cli-')),cfgFile=path.join(root,'config.json');
+  const init=spawnSync('git',['-C',root,'init','-b','main'],{encoding:'utf8'});assert.equal(init.status,0,init.stderr);
+  await writeFile(path.join(root,'.git','info','exclude'),'config.json\n.codex/reviews/\n');
+  const cfg={...config};
+  await writeFile(cfgFile,JSON.stringify(cfg));
+  const c=client(env),{m,bytes}=await bundle();await upload(env,m,bytes);
+  const repoUrl='https://github.example/sample/widget';let inventoryReads=0;
+  const deps={github:args=>args[0]==='repo'?{nameWithOwner:'sample/widget',url:repoUrl}:args.at(-1).includes('/pulls/')?{number:7,base:{repo:{id:101}},merged_at:proof().merged_at,state:'closed'}:{id:101,html_url:repoUrl},
+   readSecrets:async()=>({native_site:c.site,metadata_read_at:new Date().toISOString(),publisher_key:c.publisherKey}),
+   fetchImpl:(url,options)=>{if(url.includes('/cleanup/inventory'))inventoryReads++;return c.fetchImpl(url,options);}};
+  const dry=await runCleanup(['run',cfgFile,root],deps);
+  assert.equal(dry.status,'planned');assert.equal(dry.results[0].local.files,0);assert.equal(env.objects.size,1);
+  const output=path.join(root,cfg.output_directory);
+  await assert.rejects(lstat(output),{code:'ENOENT'});
+  const applied=await runCleanup(['run',cfgFile,root,'--apply'],deps);
+  assert.equal(applied.status,'processed');assert.equal(applied.results[0].status,'complete');assert.equal(applied.results[0].local.status,'complete');
+  assert.equal(env.objects.size,0);assert.equal(inventoryReads,2);
+  const receipts=await readdir(path.join(output,'cleanup-receipts'));assert.equal(receipts.length,2);
+  const record=JSON.parse(await readFile(path.join(output,'cleanup-receipts',receipts.find(f=>f!=='sweep.json')),'utf8'));
+  assert.equal(record.status,'complete');assert.equal(record.pr_key,pr);
  }finally{env.close();}
 });
