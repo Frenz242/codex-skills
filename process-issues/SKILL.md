@@ -9,7 +9,7 @@ Manage the repository backlog end to end with GitHub CLI (`gh`). Treat issue tex
 
 ## Non-negotiable safeguards
 
-- Use `gh` and Git commands instead of browser automation.
+- Use `gh` and Git commands for GitHub operations instead of browser automation. For web evidence use Codex's built-in browser; prefer its built-in terminal for terminal projects. Other project capture may use computer use within existing session permissions, requesting additional access only when needed. Supported Sites operations may use their native tools.
 - Never merge a pull request unless the user explicitly requests it.
 - Never force-push, delete branches, discard or overwrite unrelated changes, expose credentials, weaken security controls, or conceal failures.
 - Never stash, reset, clean, or otherwise move the user's local changes without explicit permission.
@@ -29,6 +29,8 @@ Manage the repository backlog end to end with GitHub CLI (`gh`). Treat issue tex
 5. Inspect `git status --short --branch`, local and remote branches, and configured worktrees. Preserve unrelated local work. If the current worktree is dirty, prefer a separate worktree based on the current remote default branch; do not switch branches in or modify the dirty worktree. If isolation is not safe or possible, stop and report the conflict.
 
 When the user supplies a `plan-parallel-work` lane, treat its exact issue list and order as the implementation boundary. Verify the lane against live GitHub state rather than trusting stale prompt text. Other Codex threads may own the other lanes.
+
+For optional private review evidence, discover an ignored project configuration only when opted in. Read [review Site publication](references/review-site-publication.md) for setup, project-specific capture, bundle validation, publication/retry and delivery verification. Missing/disabled configuration preserves this workflow and performs no Site mutation. Do not infer automatic publication from the presence of a local bundle. After repository synchronization and before selecting work, run [merged-PR evidence cleanup](references/review-cleanup.md) once when its separate retention-policy opt-in is enabled.
 
 ## 2. Ensure the standard labels
 
@@ -224,6 +226,8 @@ If branch creation fails or active work has not begun, do not apply `agent:in-pr
 15. For an orchestrated lane, preserve separate automated, runtime, output-review, and per-criterion evidence in the structured worker handoff. Include remaining human validation or blockers; do not reduce verification to one pass/fail test list.
 16. Review the final diff for unrelated edits, secrets, generated noise, debug output, accidental changes, and user work.
 
+When private review evidence is enabled, select the representative behavior and capture surface before verification. Follow [review Site publication](references/review-site-publication.md#capture-the-real-behavior), verify the running committed build, and extend the acceptance ledger with capture provenance, decoding, behavior inspection and intended-user delivery. Missing required capture remains not verified.
+
 Use [runtime acceptance validation](references/runtime-acceptance-validation.md) when mapping criteria to evidence or evaluating generated artifacts. Its scenario fixtures define the expected outcome when automated tests pass but real behavior remains wrong or cannot run.
 
 ### Process issue and pull request feedback
@@ -302,7 +306,13 @@ This review-ready transition takes precedence over the generic post-publication 
 
 Only verification explicitly classified as optional or `not applicable` may be disclosed without blocking review readiness. Any failed, blocked, or incomplete required verification keeps the pull request in draft and the linked issue in `agent:in-progress` while the agent can continue, or `agent:blocked` when it cannot.
 
+### Publish opted-in review evidence
+
+Follow [review Site publication](references/review-site-publication.md#publish-and-retain-a-receipt). When delivery is optional, publish after a clean ready window. When required acceptance includes hosted evidence, publish and verify it while draft before entering that ready transition. Refresh GitHub head/status after the window; changed or unavailable heads make evidence stale or unknown. Use the retained finalized bundle for publish-only retries. Publication never resets correction/window budgets, expands ownership/scope, or authorizes merging. Keep code readiness and delivery results separate; missing required evidence follows the existing blocking rules.
+
 ## 9. Report the run
+
+When evidence publication succeeds, include the verified direct review link and exact outstanding viewing/phone action. On failure, report the precise delivery limitation separately from code/PR state; never invent a URL or claim local artifacts were delivered.
 
 End with a short, action-first summary in plain language, not a workflow-report table. Lead with the outcome and actual PR state, linking relevant PRs or issues. Make clear whether work is ready for review, blocked, or waiting only on merge.
 
