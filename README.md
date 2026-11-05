@@ -6,6 +6,31 @@ This repository contains reusable Codex skills that provide repeatable workflows
 
 > **Independent project:** This is a community-maintained project for use with OpenAI Codex. It is not an official OpenAI project and is not affiliated with or endorsed by OpenAI.
 
+## Featured: process-issues + a private review Site
+
+**Turn GitHub issues into changes you can review—and see working.** [`process-issues`](process-issues/SKILL.md) works through ready issues and PR feedback, implements scoped changes, runs relevant checks, and prepares pull requests for review. GitHub stays the source of truth, and merging requires your explicit instruction.
+
+Its optional **companion ChatGPT Site** brings the evidence together in a private, phone-friendly review hub:
+
+- Browse projects and PRs, read what changed, and jump straight to GitHub.
+- Watch real walkthroughs and open screenshots tied to the tested commit, with stale or unknown evidence clearly labeled.
+- Reuse capture routines during UI verification. Scripts collect and encode the media; the model checks selected checkpoints and investigates failures.
+- Opt into cleanup of merged-PR evidence during later manual workflow runs.
+
+Start with `$process-issues` in your repository. Follow the [review Site setup guide](https://github.com/Frenz242/codex-skills/blob/db3bc0cc5e5e111d0b3b5a4aee529c096578e771/process-issues/references/review-site-publication.md) to connect your own private Site.
+
+### See it in action: PR #50
+
+This approximately 20-second walkthrough and the screenshots below were captured in **Codex's built-in browser** for [PR #50](https://github.com/Frenz242/codex-skills/pull/50), at desktop and mobile widths.
+
+[Watch the desktop and mobile walkthrough (MP4)](docs/media/process-issues/pr50-navigation.mp4)
+
+| Desktop · 1366 × 900 | Mobile width · 390 × 844 |
+| --- | --- |
+| [<img src="docs/media/process-issues/pr50-desktop.png" alt="Desktop view of the private review hub with the codex-skills project card" width="640">](docs/media/process-issues/pr50-desktop.png) | [<img src="docs/media/process-issues/pr50-mobile.png" alt="Mobile-width view of the same review hub, with content fitted to a narrow screen" width="195">](docs/media/process-issues/pr50-mobile.png) |
+
+*Actual PR #50 captures from commit `1dd652e`. The clip joins real browser frames in order and omits idle gaps. It shows the review state at recording time; the owner subsequently confirmed the Site works on the intended phone. These public showcase copies are retained separately from disposable review evidence.*
+
 ## Installation
 
 Use Git to download and update the installer, then use its menu to install or update selected skills from the current GitHub `main`. The installer supports Windows, macOS, Linux, and WSL. It downloads managed skill snapshots separately from your clone.
