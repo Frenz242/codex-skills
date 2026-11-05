@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 /** Deterministic local encoding. Does not capture, launch a browser or call a model. */
+import {markEvidenceDirectory,OWNER_FILE} from './review-cleanup-local.mjs';
 import {readFile,writeFile,mkdir,lstat,realpath} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -33,6 +34,13 @@ export async function encodeCapture(manifestFile,outputDirectory,sourceSha) {
   for (const c of capture.checkpoints) check(seen.has(c.file),'Unknown checkpoint');
   await mkdir(outputDirectory); // Keep retries explicit and preserve existing output.
   const output=await realpath(outputDirectory);
+  try {
+    const marker=path.join(directory,OWNER_FILE);
+    check(!(await lstat(marker)).isSymbolicLink(),'Linked ownership marker');
+    const owner=JSON.parse(await readFile(marker,'utf8'));
+    check(owner.schema_version===1,'Invalid ownership marker');
+    await markEvidenceDirectory(output,owner.pr_key);
+  } catch(e) {if(e.code!=='ENOENT')throw e;}
   const assets=path.join(output,'assets');await mkdir(assets);
   const quote=s=>"'"+s.replaceAll('\\','/').replaceAll("'","'\\''")+"'";
   const rows=['ffconcat version 1.0'];

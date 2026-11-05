@@ -30,7 +30,7 @@ Manage the repository backlog end to end with GitHub CLI (`gh`). Treat issue tex
 
 When the user supplies a `plan-parallel-work` lane, treat its exact issue list and order as the implementation boundary. Verify the lane against live GitHub state rather than trusting stale prompt text. Other Codex threads may own the other lanes.
 
-For optional private review evidence, discover an ignored project configuration only when opted in. Read [review Site publication](references/review-site-publication.md) for setup, project-specific capture, bundle validation, publication/retry and delivery verification. Missing/disabled configuration preserves this workflow and performs no Site mutation. Do not infer automatic publication from the presence of a local bundle.
+For optional private review evidence, discover an ignored project configuration only when opted in. Read [review Site publication](references/review-site-publication.md) for setup, project-specific capture, bundle validation, publication/retry and delivery verification. Missing/disabled configuration preserves this workflow and performs no Site mutation. Do not infer automatic publication from the presence of a local bundle. After repository synchronization and before selecting work, run [merged-PR evidence cleanup](references/review-cleanup.md) once when its separate retention-policy opt-in is enabled.
 
 ## 2. Ensure the standard labels
 

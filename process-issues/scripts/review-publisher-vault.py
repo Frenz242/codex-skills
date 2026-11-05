@@ -95,9 +95,15 @@ def main():
         vault_store(target(args[1]), private_input()["publisher_key"])
         print(json.dumps({"ok": True, "stored": "Windows Credential Manager"}))
         return 0
-    if len(args) == 5 and args[0] == "run":
+    if (len(args) == 5 and args[0] == "run") or (len(args) in (3, 4) and args[0] == "cleanup"):
+        cleanup = args[0] == "cleanup"
+        if cleanup and len(args) == 4 and args[3] != "--apply":
+            raise ValueError("Invalid cleanup mode")
         config = json.loads(Path(args[1]).read_text(encoding="utf-8"))
         if config.get("enabled") is False and config.get("schema_version") == 1:
+            print(json.dumps({"status": "disabled", "site_mutations": 0}))
+            return 0
+        if cleanup and not config.get("cleanup", {}).get("merged_prs"):
             print(json.dumps({"status": "disabled", "site_mutations": 0}))
             return 0
         secret = vault_read(target(config["site"]["project_id"]))
@@ -114,9 +120,10 @@ def main():
         node = shutil.which("node")
         if not node:
             raise RuntimeError("Node is unavailable")
-        command = [node, "--use-system-ca", str(Path(__file__).with_name("review-publish-cli.mjs")), *args[1:]]
+        script = "review-cleanup-cli.mjs" if cleanup else "review-publish-cli.mjs"
+        command = [node, "--use-system-ca", str(Path(__file__).with_name(script)), *(["run"] if cleanup else []), *args[1:]]
         return subprocess.run(command, input=json.dumps(payload)+"\n", text=True, env=env, timeout=600, check=False).returncode
-    raise ValueError("Usage: review-publisher-vault.py store SITE_ID | run CONFIG REPO_ROOT MANIFEST ASSETS")
+    raise ValueError("Usage: review-publisher-vault.py store SITE_ID | run CONFIG REPO_ROOT MANIFEST ASSETS | cleanup CONFIG REPO_ROOT [--apply]")
 
 if __name__ == "__main__":
     try:

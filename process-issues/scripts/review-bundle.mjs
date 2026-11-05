@@ -199,10 +199,10 @@ export async function validateAssetBytes(asset, bytes) {
   }
 }
 export function validateConfig(c) {
-  object(c, 'config', ['schema_version','enabled'], ['required','site','repository','auth','output_directory','media']);
+  object(c, 'config', ['schema_version','enabled'], ['required','site','repository','auth','output_directory','media','cleanup']);
   requireThat(c.schema_version === 1 && typeof c.enabled === 'boolean', 'unsupported/invalid configuration');
   if (!c.enabled) return {enabled:false};
-  object(c, 'enabled config', ['schema_version','enabled','required','site','repository','auth','output_directory','media']);
+  object(c, 'enabled config', ['schema_version','enabled','required','site','repository','auth','output_directory','media'], ['cleanup']);
   requireThat(typeof c.required === 'boolean', 'config.required: boolean required');
   object(c.site, 'site', ['project_id','origin']); text(c.site.project_id, 'site ID', 200);
   let u; try {u = new URL(c.site.origin);} catch {throw new Error('site: invalid origin');}
@@ -218,5 +218,10 @@ export function validateConfig(c) {
   integer(c.media.target_seconds,'target seconds',8,15); integer(c.media.max_file_bytes,'file limit',1,LIMITS.file);
   integer(c.media.max_bundle_bytes,'bundle limit',c.media.max_file_bytes,LIMITS.bundle);
   for (const k of ['ffmpeg','ffprobe']) requireThat(typeof c.media[k] === 'string' && /^[A-Za-z0-9_.-]+$/.test(c.media[k]), 'media: executable name on PATH required');
+  if(c.cleanup!==undefined){
+    object(c.cleanup,'cleanup',['merged_prs','orphan_grace_hours']);
+    requireThat(typeof c.cleanup.merged_prs==='boolean','cleanup opt-in must be boolean');
+    integer(c.cleanup.orphan_grace_hours,'orphan grace hours',24,720);
+  }
   return c;
 }

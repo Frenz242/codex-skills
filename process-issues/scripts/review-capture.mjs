@@ -1,3 +1,4 @@
+import {markEvidenceDirectory} from './review-cleanup-local.mjs';
 /** Run inside Codex's browser REPL with the already selected built-in tab.
  * No browser launch, model calls, navigation decisions or automatic visual approval.
  */
@@ -7,12 +8,13 @@ import {createHash} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
 
 export async function createCapture({directory, sourceSha, fps=6, maxFrames=120,
-  checkpointLimit=3, framesPerStep=12}) {
+  checkpointLimit=3, framesPerStep=12, prKey}) {
   if (!path.isAbsolute(directory) || !/^[a-f0-9]{40}$/.test(sourceSha))
     throw new Error('Absolute local output directory and full source SHA required');
   for (const [value,min,max] of [[fps,1,12],[maxFrames,2,180],[checkpointLimit,1,3],[framesPerStep,2,36]])
     if (!Number.isInteger(value) || value<min || value>max) throw new Error('Invalid capture budget');
   await mkdir(directory); // Exclusive run directory: never overwrite a previous capture.
+  if(prKey)await markEvidenceDirectory(directory,prKey);
   const manifest={schema_version:1,source:'codex-browser',source_sha:sourceSha,
     started_at:new Date().toISOString(),fps,frames:[],steps:[],checkpoints:[],
     status:'recording',timing:'Ordered browser frames at fixed fps; idle gaps omitted; no interpolation'};

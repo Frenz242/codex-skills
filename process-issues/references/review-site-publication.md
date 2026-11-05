@@ -58,7 +58,8 @@ native metadata, not by whether a URL opens. Do not broaden its audience.
 Start from the supported Vinext starter in a separate local, non-synced source
 project. Follow the user's Git initialization, first-publication and feature
 branch rules. Overlay `assets/review-site/` onto the starter, and copy
-`scripts/review-bundle.mjs` and `scripts/review-service.mjs` into its root
+`scripts/review-bundle.mjs`, `scripts/review-service.mjs` and
+`scripts/review-cleanup-service.mjs` into its root
 `lib/` directory. Preserve existing files and schema exports; add
 `export * from './review-schema';` to `db/schema.ts`. The hosting manifest
 needs D1 binding `DB` and R2 binding `BUCKET`. Generate and inspect the
@@ -224,7 +225,7 @@ text and uses only validated GitHub links and same-origin media routes.
 R2 objects are immutable by publication key/asset ID/hash. D1 batches record
 the immutable publication and compare-and-swap the per-PR current pointer.
 A failed asset/database step cannot replace the previous successful review.
-Unreferenced objects may remain after failure; broad cleanup is out of scope.
+Unreferenced objects may remain after failure; opted-in [cleanup](review-cleanup.md) reclaims aged orphan uploads and all evidence for verified merged PRs.
 
 An identical retry returns the same publication. After an ambiguous upload,
 unreadable response body or
@@ -270,10 +271,13 @@ retained Site identity and safe local configuration/storage. Reuse authorized
 credential storage; do not create another Site or share project secrets.
 The first successful publication creates its project view automatically.
 
+For the approved retention policy and local ownership registration, read
+[merged-PR evidence cleanup](review-cleanup.md).
+
 ## Focused verification
 
 ```text
-node --test process-issues/tests/review-capture.test.mjs process-issues/tests/review-bundle.test.mjs process-issues/tests/review-service.test.mjs process-issues/tests/review-publish.test.mjs
+node --test process-issues/tests/review-cleanup.test.mjs process-issues/tests/review-capture.test.mjs process-issues/tests/review-bundle.test.mjs process-issues/tests/review-service.test.mjs process-issues/tests/review-publish.test.mjs
 ```
 
 Run the skill validator and git diff --check as applicable. Build the overlay

@@ -1,12 +1,14 @@
 #!/usr/bin/env node
-import {readFile,mkdir,writeFile,rename,realpath} from 'node:fs/promises';
+import {readFile,mkdir,writeFile,rename,realpath,lstat} from 'node:fs/promises';
 import path from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {loadConfig,inspectConfig,validateLocalBundle} from './review-bundle-cli.mjs';
+import {OWNER_FILE} from './review-cleanup-local.mjs';
 import {publishReview} from './review-publish.mjs';
 function check(ok,message){if(!ok)throw Error(message);}
 function gh(args){const r=spawnSync('gh',args,{encoding:'utf8',timeout:30000,maxBuffer:2*1024*1024,windowsHide:true});check(!r.error&&r.status===0,'GitHub read failed; inspect gh authentication/network separately');try{return JSON.parse(r.stdout);}catch{throw Error('Invalid GitHub response');}}
-async function secretInput(){
+export async function secretInput(){
  if(process.stdin.isTTY){process.stdin.setRawMode(true);process.stderr.write('Ready for native Site metadata and publisher credentials (input hidden).\n');}
  process.stdin.setEncoding('utf8');
  return new Promise((resolve,reject)=>{let s='';const cleanup=()=>{process.stdin.removeListener('data',onData);process.stdin.removeListener('end',onEnd);if(process.stdin.isTTY)process.stdin.setRawMode(false);process.stdin.pause();};
@@ -22,6 +24,14 @@ async function main(){
  check(mf.startsWith(output+path.sep)&&ad.startsWith(output+path.sep),'Evidence must be in configured ignored handoff storage');
  await validateLocalBundle(mf,ad,{ffmpeg:c.media.ffmpeg,ffprobe:c.media.ffprobe});
  const m=JSON.parse(await readFile(mf,'utf8')),assets=new Map();for(const a of m.assets)assets.set(a.id,new Uint8Array(await readFile(path.join(ad,a.filename))));
+ if(c.cleanup?.merged_prs){
+  const bundleDirectory=path.dirname(mf);
+  check(bundleDirectory!==output&&ad.startsWith(bundleDirectory+path.sep),'Cleanup needs a dedicated PR bundle folder');
+  const marker=path.join(bundleDirectory,OWNER_FILE);
+  check(!(await lstat(marker)).isSymbolicLink(),'Linked evidence ownership marker');
+  const owner=JSON.parse(await readFile(marker,'utf8'));
+  check(owner.schema_version===1&&owner.pr_key===m.repository.host+':'+m.repository.id+':'+m.pull_request.number,'Register this bundle for exact PR cleanup before publishing');
+ }
  const folder=path.join(output,'receipts');
  const target=path.join(folder,m.publication.key.split(':').at(-1)+'.json'),temp=target+'.'+crypto.randomUUID()+'.tmp';
  const evidencePaths=[mf,...m.assets.map(a=>path.join(ad,a.filename)),target,temp];
@@ -43,4 +53,6 @@ async function main(){
  await writeFile(temp,JSON.stringify(receipt,null,2),{flag:'wx'});await rename(temp,target);
  return receipt;
 }
+if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
 try{console.log(JSON.stringify(await main(),null,2));}catch(e){console.error(JSON.stringify({ok:false,error:e.code||e instanceof SyntaxError?'Local input unavailable or invalid':e.message}));process.exitCode=1;}
+}

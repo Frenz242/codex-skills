@@ -17,12 +17,12 @@ its selectors, expected behavior and build identity still apply.
 Import `scripts/review-capture.mjs` inside the browser REPL, not a separate
 Playwright process. Use an absolute file URL resolved from the installed skill
 path. Pass the already selected built-in tab. Use a new ignored local run
-directory whose parent exists, and the verified running build's full SHA.
+directory inside configured evidence storage whose parent exists, and the verified running build's full SHA.
 
 ```js
 const {createCapture} = await import(captureHelperFileUrl);
 const recording = await createCapture({
-  directory: newRunDirectory, sourceSha: verifiedBuildSha
+  directory: newRunDirectory, sourceSha: verifiedBuildSha, prKey: canonicalPrKey
 });
 // Wrap the existing verification action; do not replay it.
 const step = await recording.step({
@@ -37,6 +37,10 @@ await tab.getAXState(); // inspect current state before choosing the next action
 // setting a supported viewport override. Use unique names across widths.
 nodeRepl.write(await recording.finish());
 ```
+
+The PR ownership marker propagates to encoded output for opted-in
+[merged-PR cleanup](review-cleanup.md). Keep reusable scenario source outside
+these disposable per-PR folders.
 
 Save a successful project-specific scenario as a small reviewed function in the
 project's existing test/support area (or ignored local evidence area for private

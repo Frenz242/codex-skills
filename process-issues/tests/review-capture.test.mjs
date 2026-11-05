@@ -65,12 +65,13 @@ test('encode genuine-format synthetic frames, normalize changing widths, reject 
     const r=spawnSync('ffmpeg',['-v','error','-f','lavfi','-i','color=c='+color+':s='+size,'-frames:v','1',file]);
     assert.equal(r.status,0,String(r.stderr));
   }
-  const dir=folder(),c=await createCapture({directory:dir,sourceSha:sha,fps:2,framesPerStep:2});
+  const dir=folder(),prKey='github.com:123:50',c=await createCapture({directory:dir,sourceSha:sha,fps:2,framesPerStep:2,prKey});
   for(const [name,file] of [['desktop',desktop],['mobile',mobile]])
     await c.step({tab:{screenshot:async()=>new Uint8Array(await readFile(file))},name,checkpoint:true,action:async()=>{}});
   const result=await c.finish();
   await assert.rejects(encodeCapture(result.manifest,folder(),'b'.repeat(40)),/SHA mismatch/);
-  const encoded=await encodeCapture(result.manifest,folder(),sha);
+  const encodedDirectory=folder(),encoded=await encodeCapture(result.manifest,encodedDirectory,sha);
+  assert.equal(JSON.parse(await readFile(path.join(encodedDirectory,'.review-evidence-owner.json'),'utf8')).pr_key,prKey);
   assert.equal(encoded.assets.length,3);
   assert.equal(encoded.assets[0].codec,'h264');assert.equal(encoded.assets[0].width,1280);
   assert.equal(encoded.assets[2].width,390);

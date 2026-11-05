@@ -1,5 +1,6 @@
+import {handleCleanup,publicationPrefix,uploadPrefix} from './review-cleanup-service.mjs';
 import {validateManifest,validateAssetBytes,validateObservation,digest,LIMITS} from './review-bundle.mjs';
-export const CAPABILITIES={schema_version:1,transport:'multipart',max_file_bytes:8*1024*1024,max_bundle_bytes:20*1024*1024,max_request_bytes:21*1024*1024};
+export const CAPABILITIES={schema_version:1,transport:'multipart',max_file_bytes:8*1024*1024,max_bundle_bytes:20*1024*1024,max_request_bytes:21*1024*1024,cleanup_version:1};
 const privateHeaders={'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'};
 const json=(data,status=200)=>Response.json(data,{status,headers:privateHeaders});
 const fail=(status,message)=>{const e=new Error(message);e.status=status;throw e;};
@@ -21,6 +22,7 @@ async function boundedBody(request,limit){
 const readJson=async(request)=>{try{return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(await boundedBody(request,LIMITS.manifest)));}catch(e){if(e.status)throw e;fail(400,'Invalid JSON');}};
 const keyOK=k=>typeof k==='string'&&/^[a-z0-9.-]+:[1-9][0-9]*:[1-9][0-9]*(?::[a-f0-9]{40}:[a-f0-9]{64})?$/.test(k);
 const statement=(db,sql,...args)=>db.prepare(sql).bind(...args);
+const stmtCleanup=(db,pr)=>statement(db,'SELECT pr_key FROM cleanup_receipts WHERE pr_key=?',pr).first();
 async function review(db,key){return statement(db,'SELECT * FROM reviews WHERE pr_key=?',key).first();}
 async function publication(db,key){return statement(db,'SELECT * FROM publications WHERE publication_key=?',key).first();}
 function freshness(record,observed){return !observed?.head_sha?'unknown':observed.head_sha===record.revision.head_sha?'matches observed head':'stale';}
@@ -45,13 +47,19 @@ async function publish(request,env){
   const bytes=new Uint8Array(await parts[0].arrayBuffer());try{await validateAssetBytes(a,bytes);}catch(e){fail(422,e.message);}files.push([a,bytes]);
  }
  const db=env.DB,key=m.publication.key,pr=identity.pr_key;
+ if(await stmtCleanup(db,pr))fail(410,'Merged PR evidence has been cleaned');
  const existing=await publication(db,key);
  if(existing)return json(receipt(existing,await review(db,pr),'unchanged'));
  const current=await review(db,pr),expected=m.publication.expected_current_version;
  if((current?.version||0)!==expected)fail(409,'Metadata version changed; refresh Site and GitHub before retrying');
  const previousObservation=current?JSON.parse(current.observation):null;
  if(previousObservation&&Date.parse(m.observed_github.observed_at)<Date.parse(previousObservation.observed_at))fail(409,'GitHub observation is older than stored state');
- for(const [a,bytes] of files)await env.BUCKET.put('evidence/'+key+'/'+a.id+'/'+a.sha256,bytes,{httpMetadata:{contentType:a.mime}});
+ const prefix=uploadPrefix(identity.project_key,crypto.randomUUID()),started=new Date().toISOString();
+ const registered=await statement(db,"INSERT INTO upload_jobs(storage_prefix,pr_key,project_key,state,created_at,expires_at) SELECT ?,?,?,'uploading',?,? WHERE NOT EXISTS(SELECT 1 FROM cleanup_receipts WHERE pr_key=?)",prefix,pr,identity.project_key,started,new Date(Date.now()+15*60000).toISOString(),pr).run();
+ if(registered.meta.changes!==1)fail(410,'Merged PR evidence has been cleaned');
+ try {
+ for(const [a,bytes] of files)await env.BUCKET.put(prefix+a.id+'/'+a.sha256,bytes,{httpMetadata:{contentType:a.mime}});
+
  const currentPublication=current?.current_key?await publication(db,current.current_key):null;
  const currentRevision=currentPublication?JSON.parse(currentPublication.manifest).revision:null;
  const olderCapture=currentRevision?.head_sha===m.revision.head_sha&&
@@ -59,12 +67,21 @@ async function publish(request,env){
  const promote=!olderCapture&&(m.observed_github.head_sha===m.revision.head_sha||!current?.current_key);
  const now=new Date().toISOString(),nextKey=promote?key:current.current_key;
  const result=await db.batch([
-  statement(db,'INSERT OR IGNORE INTO publications(publication_key,pr_key,project_key,manifest,created_at) VALUES(?,?,?,?,?)',key,pr,identity.project_key,JSON.stringify(m),now),
-  statement(db,'INSERT OR IGNORE INTO reviews(pr_key,project_key,repository,pr_number,version,current_key,observation,updated_at) VALUES(?,?,?,?,0,NULL,?,?)',pr,identity.project_key,JSON.stringify(m.repository),m.pull_request.number,JSON.stringify(m.observed_github),now),
-  statement(db,'UPDATE reviews SET version=version+1,current_key=?,observation=?,repository=?,updated_at=? WHERE pr_key=? AND version=?',nextKey,JSON.stringify(m.observed_github),JSON.stringify(m.repository),now,pr,expected)
+  statement(db,"INSERT OR IGNORE INTO publications(publication_key,pr_key,project_key,manifest,created_at,storage_prefix) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM upload_jobs WHERE storage_prefix=? AND state='uploading' AND expires_at>?) AND NOT EXISTS(SELECT 1 FROM cleanup_receipts WHERE pr_key=?)",key,pr,identity.project_key,JSON.stringify(m),now,prefix,prefix,now,pr),
+  statement(db,'INSERT OR IGNORE INTO reviews(pr_key,project_key,repository,pr_number,version,current_key,observation,updated_at) SELECT ?,?,?,?,0,NULL,?,? WHERE EXISTS(SELECT 1 FROM publications WHERE publication_key=?) AND NOT EXISTS(SELECT 1 FROM cleanup_receipts WHERE pr_key=?)',pr,identity.project_key,JSON.stringify(m.repository),m.pull_request.number,JSON.stringify(m.observed_github),now,key,pr),
+  statement(db,'UPDATE reviews SET version=version+1,current_key=?,observation=?,repository=?,updated_at=? WHERE pr_key=? AND version=? AND EXISTS(SELECT 1 FROM publications WHERE publication_key=?) AND NOT EXISTS(SELECT 1 FROM cleanup_receipts WHERE pr_key=?)',nextKey,JSON.stringify(m.observed_github),JSON.stringify(m.repository),now,pr,expected,key,pr)
  ]);
  if(result[2].meta.changes!==1)fail(409,'Concurrent publication retained as history; refresh Site and GitHub');
  return json(receipt(await publication(db,key),await review(db,pr)));
+ } finally {
+  // A committed prefix is protected by its publication. Uncommitted prefixes
+  // remain discoverable after failures, interrupted responses and expired leases.
+  try {
+   const stored=await publication(db,key);
+   if(stored?.storage_prefix===prefix)await statement(db,'DELETE FROM upload_jobs WHERE storage_prefix=?',prefix).run();
+   else await statement(db,"UPDATE upload_jobs SET state='abandoned',expires_at=? WHERE storage_prefix=?",new Date().toISOString(),prefix).run();
+  } catch { /* A later sweep reconciles the durable upload job. */ }
+ }
 }
 async function observations(request,env){
  const b=await readJson(request);
@@ -96,7 +113,7 @@ async function media(request,env,key,id){
  const length=range.end-range.start+1,headers={...privateHeaders,'Content-Type':asset.mime,'Content-Length':String(length),'Accept-Ranges':'bytes',
  'Content-Disposition':'inline; filename="'+asset.filename+'"','Content-Security-Policy':"default-src 'none'; sandbox"};
  if(range.status===206)headers['Content-Range']=`bytes ${range.start}-${range.end}/${asset.bytes}`;
- const objectKey='evidence/'+key+'/'+asset.id+'/'+asset.sha256;
+ const objectKey=publicationPrefix(record)+asset.id+'/'+asset.sha256;
  if(request.method==='HEAD'){if(!await env.BUCKET.head(objectKey))fail(503,'Media unavailable');return new Response(null,{status:range.status,headers});}
  const object=await env.BUCKET.get(objectKey,{range:{offset:range.start,length}});if(!object)fail(503,'Media unavailable');
  return new Response(object.body,{status:range.status,headers});
@@ -109,6 +126,7 @@ export async function handleReview(request,env){
   if(write&&!writer)fail(403,'Publisher authority required');
   if(!write&&!writer&&!viewer)fail(401,'Sign in required');
   const u=new URL(request.url),p=u.pathname.replace(/^\/api\/review\/v1\/?/,'').split('/').map(decodeURIComponent);
+  if(p[0]==='cleanup'){if(!writer)fail(403,'Publisher authority required');return await handleCleanup(request,env,p,u,readJson);}
   if(p[0]==='capabilities'&&request.method==='GET')return json({...CAPABILITIES,publisher:writer});
   if(p[0]==='publications'&&p.length===1&&request.method==='POST')return await publish(request,env);
   if(p[0]==='publications'&&p.length===2&&request.method==='GET'){
