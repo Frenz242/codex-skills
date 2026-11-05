@@ -85,6 +85,12 @@ not prove media delivery.
 
 ## Capture the real behavior
 
+For web evidence, use [reusable capture routines](review-capture.md) during the
+UI verification already being performed. Reuse reviewed project scenarios,
+record frames in a bounded loop, and inspect two or three checkpoints on success.
+Let scripts encode, validate and publish; spend additional model inspection on
+failures or material gaps rather than every frame or a duplicate walkthrough.
+
 Select the capture surface by the project being demonstrated:
 
 | Project | Evidence capture |
@@ -267,7 +273,7 @@ The first successful publication creates its project view automatically.
 ## Focused verification
 
 ```text
-node --test process-issues/tests/review-bundle.test.mjs process-issues/tests/review-service.test.mjs process-issues/tests/review-publish.test.mjs
+node --test process-issues/tests/review-capture.test.mjs process-issues/tests/review-bundle.test.mjs process-issues/tests/review-service.test.mjs process-issues/tests/review-publish.test.mjs
 ```
 
 Run the skill validator and git diff --check as applicable. Build the overlay
