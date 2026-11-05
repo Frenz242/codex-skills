@@ -134,3 +134,22 @@ test('capture source follows the actual project surface',async()=>{
  m.demonstration.limitation='Built-in terminal unavailable; authorized terminal used';await seal(m);await validateManifest(m);
  m.demonstration.surface='other';m.demonstration.capture_source='authorized-computer-use';await seal(m);await validateManifest(m);
 });
+
+test('evidence safety requires the directory and actual handoff paths to be ignored',async()=>{
+  const root=await mkdtemp(path.join(tmpdir(),'review-ignore-'));
+  const git=args=>{const r=spawnSync('git',['-C',root,...args],{encoding:'utf8'});assert.equal(r.status,0,r.stderr);};
+  try{
+    git(['init','-b','main']);await mkdir(path.join(root,'.codex','review-evidence','assets'),{recursive:true});
+    const c=JSON.parse(await readFile(new URL('../assets/review-site.config.example.json',import.meta.url),'utf8'));c.enabled=true;
+    const file=path.join(root,'.codex','review-site.local.json'),asset=path.join(root,c.output_directory,'assets','result.txt');
+    await writeFile(file,JSON.stringify(c));await writeFile(asset,'synthetic evidence');
+    const exclude=path.join(root,'.git','info','exclude');
+    await writeFile(exclude,'.codex/review-site.local.json\n.codex/review-evidence/receipt.json\n');
+    await assert.rejects(inspectConfig(file,root,[asset]),/Ignored evidence directory/);
+    await writeFile(exclude,'.codex/review-site.local.json\n.codex/review-evidence/\n');
+    const target=path.join(root,c.output_directory,'receipts','publication.json');
+    assert.equal((await inspectConfig(file,root,[asset,target,target+'.tmp'])).enabled,true);
+    await assert.rejects(inspectConfig(file,root,[path.join(root,'outside.txt')]),/Evidence path escapes/);
+    git(['add','-f',path.relative(root,asset)]);await assert.rejects(inspectConfig(file,root,[asset]));
+  }finally{await rm(root,{recursive:true,force:true});}
+});

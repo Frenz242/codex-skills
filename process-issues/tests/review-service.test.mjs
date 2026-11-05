@@ -98,3 +98,19 @@ test('bounded request, reserved fields and unavailable media fail without claimi
  for(const method of ['GET','HEAD'])assert.equal((await call(env,'media/'+encodeURIComponent(m.publication.key)+'/output',{method})).status,503);
  }finally{env.close();}
 });
+
+test('older capture of the same commit stays historical after refreshing the storage version',async()=>{
+ const env=storage();try{
+ const {m,bytes}=await bundle();m.revision.captured_at='2026-01-03T00:00:00Z';m.publication.key=await publicationKey(m);
+ assert.equal((await upload(env,m,bytes)).status,200);
+ const older=structuredClone(m);older.revision.captured_at='2026-01-02T00:00:00Z';older.summary.changed='Old capture retried later';older.observed_github.observed_at='2026-01-04T00:00:00Z';older.publication.expected_current_version=1;older.publication.key=await publicationKey(older);
+ const receipt=await (await upload(env,older,bytes)).json();assert.equal(receipt.disposition,'historical');
+ let rows=await (await call(env,'reviews?project=github.example%3A101')).json();assert.equal(rows.reviews[0].publication_key,m.publication.key);
+ assert.equal((await (await upload(env,older,bytes)).json()).disposition,'historical');
+ const newer=structuredClone(older);newer.revision.captured_at='2026-01-05T00:00:00Z';newer.publication.expected_current_version=receipt.version;newer.publication.key=await publicationKey(newer);
+ assert.equal((await (await upload(env,newer,bytes)).json()).disposition,'current');
+ // Capture time orders evidence for the same commit, never different Git heads.
+ const next=structuredClone(newer);next.revision.head_sha='d'.repeat(40);next.demonstration.source_sha=next.revision.head_sha;next.observed_github.head_sha=next.revision.head_sha;next.revision.captured_at='2026-01-01T00:00:00Z';next.publication.expected_current_version=3;next.publication.key=await publicationKey(next);
+ assert.equal((await (await upload(env,next,bytes)).json()).disposition,'current');
+ }finally{env.close();}
+});

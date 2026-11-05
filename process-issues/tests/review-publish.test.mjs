@@ -41,3 +41,34 @@ test('failed observation PATCH retains publication and reports unknown freshness
  const r=await publishReview(i);assert.equal(r.stored_bytes_verified,true);assert.equal(r.freshness,'unknown');assert.match(r.limitation,/Observation refresh/);
  }finally{env.close();}
 });
+
+for(const failure of ['interrupted body','invalid JSON']){
+ test('reconciles committed upload with '+failure+' without a second POST',async()=>{
+  const env=storage();try{
+   const i=await input(env),fetch=i.fetchImpl;let posts=0,lookupsAfterPost=0;
+   i.fetchImpl=async(u,o)=>{
+    if(posts&&u.includes('/publications/'))lookupsAfterPost++;
+    const result=await fetch(u,o);
+    if(o.method==='POST'){posts++;return failure==='invalid JSON'?new Response('{',{status:200}):new Response(new ReadableStream({start(c){c.error(Error('synthetic response interruption'));}}),{status:200});}
+    return result;
+   };
+   const r=await publishReview(i);assert.equal(r.publication_key,i.manifest.publication.key);assert.equal(r.stored_bytes_verified,true);assert.equal(posts,1);assert.equal(lookupsAfterPost,2,'one reconciliation lookup plus final receipt read');
+  }finally{env.close();}
+ });
+}
+test('unreadable uncommitted upload performs one reconciliation and leaves outcome unknown',async()=>{
+ const env=storage();try{
+  const i=await input(env),fetch=i.fetchImpl;let posts=0,lookupsAfterPost=0;
+  i.fetchImpl=async(u,o)=>{if(o.method==='POST'){posts++;return new Response('{',{status:200});}if(posts&&u.includes('/publications/'))lookupsAfterPost++;return fetch(u,o);};
+  await assert.rejects(publishReview(i),/Upload outcome unknown/);assert.equal(posts,1);assert.equal(lookupsAfterPost,1);
+ }finally{env.close();}
+});
+test('known authorization and conflict failures do not trigger ambiguous-upload recovery',async()=>{
+ for(const status of [403,409]){
+  const env=storage();try{
+   const i=await input(env),fetch=i.fetchImpl;let posts=0,lookupsAfterPost=0;
+   i.fetchImpl=async(u,o)=>{if(o.method==='POST'){posts++;return new Response(null,{status});}if(posts&&u.includes('/publications/'))lookupsAfterPost++;return fetch(u,o);};
+   await assert.rejects(publishReview(i),status===403?/authorization failed/:/Publication conflict/);assert.equal(posts,1);assert.equal(lookupsAfterPost,0);
+  }finally{env.close();}
+ }
+});

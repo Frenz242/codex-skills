@@ -52,7 +52,7 @@ export async function validateLocalBundle(manifestFile, assetDirectory, {decode 
   return {...result,integrity:'verified',media_decode:decode ? 'verified where applicable' : 'not verified',
     behavior_review:'not verified by this helper',source_provenance:'not verified by this helper'};
 }
-export async function inspectConfig(file, repositoryRoot) {
+export async function inspectConfig(file, repositoryRoot, evidencePaths = []) {
   const config = await loadConfig(file);
   if (!config.enabled) return {enabled:false,site_mutations:0};
   const root = await realpath(repositoryRoot);
@@ -70,8 +70,13 @@ export async function inspectConfig(file, repositoryRoot) {
   }
   const gitRoot = run('git',['-C',root,'rev-parse','--show-toplevel'],'Git root check').trim();
   check(await realpath(gitRoot) === root, 'Configured root must be the Git worktree root');
-  // Check a prospective file too: an existing directory is not required for dry-run.
-  run('git',['-C',root,'check-ignore','--quiet','--',config.output_directory+'/receipt.json'],'Ignored evidence directory check');
+  // Excluding one prospective filename does not protect the evidence directory.
+  run('git',['-C',root,'check-ignore','--quiet','--',config.output_directory+'/'],'Ignored evidence directory check');
+  for (const file of evidencePaths) {
+    const resolved = path.resolve(root,file);
+    check(resolved.startsWith(target+path.sep), 'Evidence path escapes configured output');
+    run('git',['-C',root,'check-ignore','--quiet','--',path.relative(root,resolved)],'Ignored evidence file check');
+  }
   const tracked = run('git',['-C',root,'ls-files','--',config.output_directory],'Tracked evidence check').trim();
   check(!tracked, 'Evidence output contains tracked files');
   const configRelative = path.relative(root,path.resolve(file));

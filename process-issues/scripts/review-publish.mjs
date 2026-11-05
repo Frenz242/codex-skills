@@ -41,10 +41,16 @@ export async function publishReview({config,manifest,assets,site,metadataReadAt,
   for(const a of m.assets)form.append(a.id,new Blob([assets.get(a.id)],{type:a.mime}),a.filename);
   let response;
   try{response=await request('publications',{method:'POST',body:form});}
-  catch{result=await expect(await request('publications/'+encodeURIComponent(m.publication.key)),true);if(!result)throw Error('Upload outcome unknown; no duplicate write attempted. Retry this finalized bundle later.');}
-  if(response){
-   if(response.status>=500){result=await expect(await request('publications/'+encodeURIComponent(m.publication.key)),true);if(!result)throw Error('Upload not confirmed; local evidence retained for retry');}
-   else result=await expect(response);
+  catch{/* The server may have committed; reconcile below. */}
+  // Known rejections are not uncertain commits and must retain their error.
+  if(response&&!response.ok&&response.status<500)await expect(response);
+  if(response?.ok){
+   try{result=await data(response);checkReceipt(result);}
+   catch{result=null;} // Headers can arrive before the response body is lost.
+  }
+  if(!result){
+   result=await expect(await request('publications/'+encodeURIComponent(m.publication.key)),true);
+   if(!result)throw Error('Upload outcome unknown; no duplicate write attempted. Retry this finalized bundle later.');
   }
  }
  function checkReceipt(r){

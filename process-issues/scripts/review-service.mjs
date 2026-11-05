@@ -52,7 +52,11 @@ async function publish(request,env){
  const previousObservation=current?JSON.parse(current.observation):null;
  if(previousObservation&&Date.parse(m.observed_github.observed_at)<Date.parse(previousObservation.observed_at))fail(409,'GitHub observation is older than stored state');
  for(const [a,bytes] of files)await env.BUCKET.put('evidence/'+key+'/'+a.id+'/'+a.sha256,bytes,{httpMetadata:{contentType:a.mime}});
- const promote=m.observed_github.head_sha===m.revision.head_sha||!current?.current_key;
+ const currentPublication=current?.current_key?await publication(db,current.current_key):null;
+ const currentRevision=currentPublication?JSON.parse(currentPublication.manifest).revision:null;
+ const olderCapture=currentRevision?.head_sha===m.revision.head_sha&&
+  Date.parse(m.revision.captured_at)<Date.parse(currentRevision.captured_at);
+ const promote=!olderCapture&&(m.observed_github.head_sha===m.revision.head_sha||!current?.current_key);
  const now=new Date().toISOString(),nextKey=promote?key:current.current_key;
  const result=await db.batch([
   statement(db,'INSERT OR IGNORE INTO publications(publication_key,pr_key,project_key,manifest,created_at) VALUES(?,?,?,?,?)',key,pr,identity.project_key,JSON.stringify(m),now),

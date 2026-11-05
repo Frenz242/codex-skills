@@ -22,6 +22,10 @@ async function main(){
  check(mf.startsWith(output+path.sep)&&ad.startsWith(output+path.sep),'Evidence must be in configured ignored handoff storage');
  await validateLocalBundle(mf,ad,{ffmpeg:c.media.ffmpeg,ffprobe:c.media.ffprobe});
  const m=JSON.parse(await readFile(mf,'utf8')),assets=new Map();for(const a of m.assets)assets.set(a.id,new Uint8Array(await readFile(path.join(ad,a.filename))));
+ const folder=path.join(output,'receipts');
+ const target=path.join(folder,m.publication.key.split(':').at(-1)+'.json'),temp=target+'.'+crypto.randomUUID()+'.tmp';
+ const evidencePaths=[mf,...m.assets.map(a=>path.join(ad,a.filename)),target,temp];
+ await inspectConfig(configFile,root,evidencePaths);
  const observe=async()=>{
   const repo=m.repository.owner+'/'+m.repository.name;
   const r=gh(['api','--hostname',m.repository.host,'repos/'+repo]);
@@ -33,8 +37,9 @@ async function main(){
  const input=await secretInput();
  if(input.native_site && !input.native_site.siwc_bypass_bearer_token) input.native_site.siwc_bypass_bearer_token=process.env[c.auth.service_token_env];
  const receipt=await publishReview({config:c,manifest:m,assets,site:input.native_site,metadataReadAt:input.metadata_read_at,publisherKey:input.publisher_key||process.env[c.auth.publisher_key_env],observe});
- const folder=path.join(output,'receipts');await mkdir(folder,{recursive:true});
- const target=path.join(folder,m.publication.key.split(':').at(-1)+'.json'),temp=target+'.'+crypto.randomUUID()+'.tmp';
+ // Recheck before persisting: ignore rules may have changed during publication.
+ await inspectConfig(configFile,root,evidencePaths);
+ await mkdir(folder,{recursive:true});
  await writeFile(temp,JSON.stringify(receipt,null,2),{flag:'wx'});await rename(temp,target);
  return receipt;
 }

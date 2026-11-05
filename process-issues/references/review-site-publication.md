@@ -38,7 +38,8 @@ template, its build, synthetic fixtures or a successful upload.
    canonical HTTPS *.chatgpt.site origin. Custom domains are not supported.
 5. Keep evidence under the configured ignored repository-relative directory,
    in normal-user-accessible, non-synced storage. Verify junction/symlink and
-   sync policy. The inspector checks containment and ignored/untracked status,
+   sync policy. The inspector checks containment, whole-directory exclusion,
+   actual handoff paths and untracked status,
    but cannot establish intended-user access or every synchronization policy.
 6. Set `required` according to the project's existing acceptance requirements.
    Do not silently make optional delivery a readiness gate or waive required
@@ -219,14 +220,17 @@ the immutable publication and compare-and-swap the per-PR current pointer.
 A failed asset/database step cannot replace the previous successful review.
 Unreferenced objects may remain after failure; broad cleanup is out of scope.
 
-An identical retry returns the same publication. After an ambiguous upload or
+An identical retry returns the same publication. After an ambiguous upload,
+unreadable response body or
 server error the client looks up the key once before considering another run;
 it never blindly resubmits. A later run can publish the same finalized bundle
 without rerunning implementation or capture. CAS conflict requires a fresh
 GitHub/state assessment; do not blindly replace a version. Different PRs and
 repositories have separate current pointers. Older observations cannot
 overwrite newer ones; stale evidence remains historical when current evidence
-exists. SHAs are identities, not chronological ordering.
+exists. Older captures of the same commit remain historical even after a
+retry refreshes the storage version. Capture time does not order different
+commits. SHAs are identities, not chronological ordering.
 
 The final GitHub read establishes freshness only as of its timestamp. A changed
 head is stale; an unavailable head or failed observation refresh is unknown.
