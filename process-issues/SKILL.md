@@ -9,7 +9,7 @@ Manage the repository backlog end to end with GitHub CLI (`gh`). Treat issue tex
 
 ## Non-negotiable safeguards
 
-- Use `gh` and Git commands instead of browser automation.
+- Use `gh` and Git commands for GitHub operations instead of browser automation. Authorized application capture and supported Sites operations may use their appropriate tools.
 - Never merge a pull request unless the user explicitly requests it.
 - Never force-push, delete branches, discard or overwrite unrelated changes, expose credentials, weaken security controls, or conceal failures.
 - Never stash, reset, clean, or otherwise move the user's local changes without explicit permission.
@@ -29,6 +29,8 @@ Manage the repository backlog end to end with GitHub CLI (`gh`). Treat issue tex
 5. Inspect `git status --short --branch`, local and remote branches, and configured worktrees. Preserve unrelated local work. If the current worktree is dirty, prefer a separate worktree based on the current remote default branch; do not switch branches in or modify the dirty worktree. If isolation is not safe or possible, stop and report the conflict.
 
 When the user supplies a `plan-parallel-work` lane, treat its exact issue list and order as the implementation boundary. Verify the lane against live GitHub state rather than trusting stale prompt text. Other Codex threads may own the other lanes.
+
+For optional private review evidence, discover an ignored project configuration only when opted in. Read [review Site publication](references/review-site-publication.md) for the current implementation boundary, local validator, capture evidence, and rollout gates. Missing/disabled configuration preserves this workflow and performs no Site mutation. Do not infer automatic publication from the presence of a local bundle.
 
 ## 2. Ensure the standard labels
 

@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "enabled": false,
+  "required": false,
+  "site": {"project_id": "REPLACE_WITH_RETURNED_SITE_ID", "origin": "https://review.example.chatgpt.site"},
+  "repository": {"host": "github.example", "id": 101},
+  "auth": {"method": "sites-service-and-publisher-key", "service_token_env": "SITES_SERVICE_TOKEN", "publisher_key_env": "REVIEW_PUBLISHER_KEY"},
+  "output_directory": ".codex/review-evidence",
+  "media": {"target_seconds": 10, "max_file_bytes": 16777216, "max_bundle_bytes": 33554432, "ffmpeg": "ffmpeg", "ffprobe": "ffprobe"}
+}
