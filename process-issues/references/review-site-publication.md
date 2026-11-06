@@ -1,6 +1,6 @@
 # Private review Site: setup, capture and publication
 
-Read this when a project opts in to hosted PR evidence. The supplied publisher,
+Run [review-hub onboarding](review-site-onboarding.md) before deciding whether a project uses hosted PR evidence. Read the remaining publication procedure when the project opts in. The supplied publisher,
 D1/R2 service and mobile gallery implement one private Site with repository
 views and PR deep links. They do not capture a screen or decide whether an
 acceptance criterion passed. The invoking agent owns capture, visual/semantic
@@ -25,11 +25,14 @@ template, its build, synthetic fixtures or a successful upload.
 ## Configure an existing project
 
 1. Verify repository identity through gh and Git under the normal workflow.
-2. Opt in with an ignored `.codex/review-site.local.json`, starting from
-   `assets/review-site.config.example.json`. The agent may resolve
-   `CODEX_REVIEW_SITE_CONFIG` and pass that path explicitly. The helper does
-   not silently search environment paths. Missing/disabled config means no
-   Site calls or writes. Unknown versions fail.
+2. After the explicit opt-in is recorded by the onboarding preflight, configure
+   an ignored `.codex/review-site.local.json`, starting from
+   `assets/review-site.config.example.json`. Resolve `CODEX_REVIEW_SITE_CONFIG`,
+   the active worktree and the original checkout as described in onboarding;
+   pass the chosen path explicitly. The helper does not search for it. A missing
+   or disabled config prevents Site calls/writes but does not erase the decision
+   or imply opt-out. Unknown versions fail. Do not re-enable a disabled config
+   without resolving whether it represents an explicit pause or unfinished setup.
 3. Append local config/evidence exclusions to `.git/info/exclude`, or use
    established project ignore policy; preserve existing entries. Never commit
    local configuration, credentials, real media or raw operational logs.
