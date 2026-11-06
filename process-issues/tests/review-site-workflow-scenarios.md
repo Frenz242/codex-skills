@@ -5,7 +5,18 @@ GitHub/Sites state merely to exercise these descriptions.
 
 | Scenario | Evaluation and evidence boundary |
 | --- | --- |
-| Config absent/disabled | Existing workflow continues without Site calls; executable disabled-path test. |
+| No decision, no config (existing or new repository) | Ask opt-in/out once; continue independent work; no hub setup/capture/publication until answered. No answer leaves the decision absent. |
+| Recorded opt-out, enabled config left behind | Do not ask again or publish. Preserve config and existing evidence; opting out does not authorize deletion. |
+| Recorded opt-in, missing/disabled config | Retain opt-in; report setup or pause conflict and resolve it without repeating the enrollment question or publishing prematurely. |
+| Disabled example, no decision | Not evidence of a user refusal; ask opt-in/out. Existing publisher disabled-path test still prevents writes. |
+| Existing explicit decision in conversation or repository policy | Reuse and persist it without another confirmation. A task-only opt-out does not become a permanent repository refusal. |
+| Existing enabled and validated configuration | Treat verified prior opt-in as decided; preserve the destination. Do not infer opt-in from an unvalidated example or merely the existence of a hub. |
+| Linked worktree, root config only | Read the shared local Git choice; discover the original checkout config via worktree inventory, not guessed parent paths. Validate repository identity and output paths in the active worktree. |
+| Conflicting config sources or inaccessible config | Report the exact ambiguity/access error. Never treat it as missing/opt-out or silently switch hub destinations. |
+| Invalid/multiple saved decision values | Resolve the conflicting record; never silently rewrite or enroll the repository. |
+| No Git metadata during new-project planning | Ask during setup and retain the explicit answer in the session; persist only after authorized Git initialization. No hidden initialization just to save a preference. |
+| Repeat run or explicit later change | Respect the saved answer; change it only when the user explicitly changes the repository preference. Recheck before writing to avoid stale overwrites. |
+| Unattended run with no answer channel | Leave undecided and report the pending question; no hub writes. Independent work may continue. |
 | First setup/repeat run | Retain one native Site ID and local source; never create a Site in publisher code. Repeated bundle produces one PR entry. |
 | Web project | Built-in Codex browser captures actual screenshots/video; incompatible capture provenance is rejected. Opening a panel alone is not capture proof. |
 | Terminal project | Prefer built-in terminal; record reason for another authorized terminal. Real semantic output may make video unnecessary. |

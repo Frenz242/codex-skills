@@ -30,7 +30,9 @@ Manage the repository backlog end to end with GitHub CLI (`gh`). Treat issue tex
 
 When the user supplies a `plan-parallel-work` lane, treat its exact issue list and order as the implementation boundary. Verify the lane against live GitHub state rather than trusting stale prompt text. Other Codex threads may own the other lanes.
 
-For optional private review evidence, discover an ignored project configuration only when opted in. Read [review Site publication](references/review-site-publication.md) for setup, project-specific capture, bundle validation, publication/retry and delivery verification. Missing/disabled configuration preserves this workflow and performs no Site mutation. Do not infer automatic publication from the presence of a local bundle. After repository synchronization and before selecting work, run [merged-PR evidence cleanup](references/review-cleanup.md) once when its separate retention-policy opt-in is enabled.
+Before selecting work, run the [review-hub decision preflight](references/review-site-onboarding.md) for every repository, including existing projects and new repositories. If no explicit decision exists, ask once whether to opt in or out and persist the answer for that repository across worktrees. Missing configuration is **undecided**, not an opt-out; silence is not consent. Continue independent work while awaiting an answer, but do not configure, capture for, or publish to the hub without opt-in. Honor scoped workflow opt-outs and existing explicit decisions.
+
+For opted-in repositories, follow [review Site publication](references/review-site-publication.md) for setup, capture, bundle validation and delivery. Missing setup retains the opt-in and must be reported; a branch preview or screenshots alone do not substitute for a requested hub entry and video. Do not infer authorization from a local bundle or an existing hub. Run [merged-PR evidence cleanup](references/review-cleanup.md) only when its separate retention-policy opt-in is enabled.
 
 ## 2. Ensure the standard labels
 
@@ -312,7 +314,7 @@ Follow [review Site publication](references/review-site-publication.md#publish-a
 
 ## 9. Report the run
 
-When evidence publication succeeds, include the verified direct review link and exact outstanding viewing/phone action. On failure, report the precise delivery limitation separately from code/PR state; never invent a URL or claim local artifacts were delivered.
+When evidence publication succeeds, include the verified direct review link and exact outstanding viewing/phone action. On failure, report the precise delivery limitation separately from code/PR state; never invent a URL or claim local artifacts were delivered. If the review-hub choice remains unanswered or an opted-in setup/capture/publication step is incomplete, explicitly report that status and the next action. Distinguish screenshots, video capture, hub-entry creation and verified delivery; do not silently replace hub delivery with a branch preview. A saved opt-out needs no repeated question or routine warning.
 
 End with a short, action-first summary in plain language, not a workflow-report table. Lead with the outcome and actual PR state, linking relevant PRs or issues. Make clear whether work is ready for review, blocked, or waiting only on merge.
 
