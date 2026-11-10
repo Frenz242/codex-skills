@@ -2051,7 +2051,10 @@ def import_backfill(
             run_kind="backfill",
             source_key=safe_source_key,
         )
-    except sqlite3.IntegrityError:
+    except sqlite3.IntegrityError as error:
+        # Python 3.10 does not expose SQLite's extended error codes.
+        if str(error) != "UNIQUE constraint failed: skill_runs.source_key":
+            raise
         concurrent = connection.execute(
             """
             SELECT run_id, observation_count FROM skill_runs
@@ -2065,9 +2068,10 @@ def import_backfill(
         def repair_source(conn: sqlite3.Connection) -> None:
             conn.execute(
                 """
-                INSERT OR IGNORE INTO backfill_sources(
+                INSERT INTO backfill_sources(
                     source_key, source_type, completed_at, run_id, observation_count
                 ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(source_key) DO NOTHING
                 """,
                 (
                     safe_source_key,
@@ -2092,6 +2096,7 @@ def import_backfill(
             """
             INSERT INTO backfill_sources(source_key, source_type, completed_at, run_id, observation_count)
             VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(source_key) DO NOTHING
             """,
             (
                 safe_source_key,

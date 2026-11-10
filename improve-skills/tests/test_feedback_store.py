@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import redirect_stdout
+from contextlib import closing, redirect_stdout
 import importlib.util
 import io
 import json
@@ -1013,6 +1013,86 @@ class EvaluationAndFlowTests(StoreCase):
         self.assertEqual(1, connection.execute("SELECT COUNT(*) FROM skill_runs").fetchone()[0])
         self.assertEqual(1, connection.execute("SELECT COUNT(*) FROM backfill_sources").fetchone()[0])
         connection.close()
+
+    def test_duplicate_repairs_source_before_original_finalizes(self) -> None:
+        source_key = "repair-before-original-finalization"
+        run_committed = threading.Barrier(2, timeout=10)
+        source_repaired = threading.Barrier(2, timeout=10)
+        record_run = store.record_run
+
+        def pause_after_recording(connection, **kwargs):
+            result = record_run(connection, **kwargs)
+            run_committed.wait()
+            source_repaired.wait()
+            return result
+
+        def import_once(connection):
+            return store.import_backfill(
+                connection,
+                source_key=source_key,
+                source_type="github",
+                observer_skill_path=self.skill,
+                observations=[observation(target_skill_path=self.skill)],
+            )
+
+        def import_original():
+            worker = self.open()
+            try:
+                return import_once(worker)
+            finally:
+                worker.close()
+
+        with (
+            closing(self.open()) as connection,
+            mock.patch.object(store, "record_run", side_effect=pause_after_recording),
+            ThreadPoolExecutor(max_workers=1) as pool,
+        ):
+            original = pool.submit(import_original)
+            run_committed.wait()
+            try:
+                duplicate = import_once(connection)
+                source = connection.execute(
+                    "SELECT run_id FROM backfill_sources WHERE source_key = ?", (source_key,)
+                ).fetchone()
+                self.assertIsNotNone(source)
+                self.assertEqual(duplicate["runId"], source["run_id"])
+            finally:
+                source_repaired.wait()
+            first = original.result()
+            runs = connection.execute("SELECT run_id FROM skill_runs").fetchall()
+            sources = connection.execute(
+                "SELECT source_key, run_id, observation_count FROM backfill_sources"
+            ).fetchall()
+
+        self.assertFalse(first["alreadyProcessed"])
+        self.assertTrue(duplicate["alreadyProcessed"])
+        self.assertEqual(first["runId"], duplicate["runId"])
+        self.assertEqual(1, first["observationCount"])
+        self.assertEqual(1, duplicate["observationCount"])
+        self.assertEqual([(first["runId"],)], [tuple(row) for row in runs])
+        self.assertEqual([(source_key, first["runId"], 1)], [tuple(row) for row in sources])
+
+    def test_backfill_propagates_unrelated_integrity_failure(self) -> None:
+        source_key = "incomplete-source"
+        with closing(self.open()) as connection:
+            store.record_run(
+                connection, skill_path=self.skill, run_kind="backfill", source_key=source_key
+            )
+            connection.execute(
+                """
+                CREATE TRIGGER reject_run BEFORE INSERT ON skill_runs
+                BEGIN SELECT RAISE(ABORT, 'unrelated integrity failure'); END
+                """
+            )
+            with self.assertRaisesRegex(sqlite3.IntegrityError, "unrelated integrity failure"):
+                store.import_backfill(
+                    connection,
+                    source_key=source_key,
+                    source_type="github",
+                    observer_skill_path=self.skill,
+                    observations=[],
+                )
+            self.assertEqual(0, connection.execute("SELECT COUNT(*) FROM backfill_sources").fetchone()[0])
 
     def test_post_merge_versions_are_queryable_by_content_hash(self) -> None:
         connection = self.open()
