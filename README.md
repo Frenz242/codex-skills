@@ -23,6 +23,8 @@ Start with `$process-issues` in your repository. Follow the [review Site setup g
 
 This approximately 20-second walkthrough and the screenshots below were captured in **Codex's built-in browser** for [PR #50](https://github.com/Frenz242/codex-skills/pull/50), at desktop and mobile widths.
 
+https://github.com/user-attachments/assets/40c907f1-059a-4675-8059-23e9d9a9b9f6
+
 [Watch the desktop and mobile walkthrough (MP4)](docs/media/process-issues/pr50-navigation.mp4)
 
 | Desktop · 1366 × 900 | Mobile width · 390 × 844 |
