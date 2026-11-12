@@ -149,6 +149,17 @@ Respect issues GitHub already closed. If an issue remains open, close it only wh
 - Verify each issue after mutation and record the exact before/after metadata in the ledger.
 - Re-query open issues and pull requests after reconciliation so the final ready, waiting, review, and blocked lists reflect current state.
 
+## Optional review-evidence cleanup
+
+When the repository uses the private review-evidence integration and its separate
+cleanup policy is enabled, run [merged-PR evidence cleanup](../process-issues/references/review-cleanup.md)
+after reconciliation. Use the shared script with fresh GitHub merge checks and
+native Site metadata; it deletes all hosted revisions and registered local
+evidence, preserves small retry receipts, and sweeps aged orphan uploads.
+Missing/disabled configuration changes nothing. This maintenance does not start
+implementation or authorize merging. Report pending cleanup separately from
+successful Git/issue synchronization.
+
 ## 5. Handle repository-file changes
 
 Normally change no repository files beyond the safe Git synchronization. If repository policy stores issue metadata in a tracked file and reconciliation genuinely requires editing it, follow the repository's branch and pull-request workflow. Do not create a feature branch or pull request merely to record that synchronization ran.
