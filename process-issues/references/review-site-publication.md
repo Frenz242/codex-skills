@@ -61,8 +61,8 @@ native metadata, not by whether a URL opens. Do not broaden its audience.
 Start from the supported Vinext starter in a separate local, non-synced source
 project. Follow the user's Git initialization, first-publication and feature
 branch rules. Overlay `assets/review-site/` onto the starter, and copy
-`scripts/review-bundle.mjs`, `scripts/review-service.mjs` and
-`scripts/review-cleanup-service.mjs` into its root
+`scripts/review-bundle.mjs`, `scripts/review-runbook.mjs`,
+`scripts/review-service.mjs` and `scripts/review-cleanup-service.mjs` into its root
 `lib/` directory. Preserve existing files and schema exports; add
 `export * from './review-schema';` to `db/schema.ts`. The hosting manifest
 needs D1 binding `DB` and R2 binding `BUCKET`. Generate and inspect the
@@ -133,6 +133,41 @@ requires provenance for media. A terminal fallback requires a limitation.
 Describe the actual tool/session/export, scenario and outcome in `tool`;
 keep private session IDs and unnecessary paths in local provenance sidecars.
 These declarations are assertions to verify, not proof supplied by a validator.
+
+## Write the owner runbook
+
+If the owner needs to test or confirm a change, make the private PR page usable
+without searching GitHub or opening a text attachment. Describe the environment,
+starting state, exact action, observable pass and fail signals, and what to
+record when a prerequisite or source is unavailable. Say whether the check
+blocks merge or belongs to a separate acceptance issue.
+
+Use a structured UTF-8 JSON asset with manifest ID `owner-verification`, role
+`output`, filename `owner-verification.json`, and MIME `application/json`.
+It renders inline on the PR page. Put each literal prompt or script in its own
+block so its Copy button sends only the pasteable text. Keep the explanations
+and expected results in the surrounding step. Use human-readable case names
+and add direct links at the step that uses them.
+
+- Link to each complete prompt, script or configuration file at the exact
+  full PR head SHA. For defined test cases, link to the relevant section or
+  lines at that same SHA and tell the reviewer which groups to run.
+- Link to the exact issue or form where the owner should report results. Say
+  what to include and keep raw output, secrets and unnecessary customer data
+  out of the handoff. Use authorized real inputs in place where appropriate
+  and isolated data and destinations for actions that write or send.
+- Publish via the existing private bundle flow. In the signed-in view, check
+  step order, Unicode, narrow layout, destination and revision of each link,
+  and the literal clipboard contents of a copied block. The GitHub PR gets a
+  sanitized action summary and the verified direct entry URL.
+
+Runbook JSON version 1 contains a `steps` array. Each step requires `title`
+and `instructions`, and may include `links` (objects with `label` and an HTTPS
+`url`), `blocks` (objects with `label`, `kind` of `prompt` or `script`, and literal
+`text`), and separate `pass`, `fail` and `unverified` strings. Include these
+outcome fields on test steps when applicable. The bundle validator enforces the
+128 KiB runbook limit and schema. The current Site must include the inline
+renderer. Older text assets can still be read inline on the updated Site.
 
 ## Finalize the bundle
 

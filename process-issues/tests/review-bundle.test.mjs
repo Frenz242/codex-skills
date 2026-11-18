@@ -31,6 +31,34 @@ test('canonical encoding is deterministic and rejects non-JSON numeric values',(
   assert.equal(canonical({z:1,a:{z:2,a:'é'}}),canonical({a:{a:'é',z:2},z:1}));
   for(const bad of [NaN,Infinity,1.5,undefined]) assert.throws(()=>canonical(bad));
 });
+test('owner runbook validates UTF-8, copy blocks and safe links', async () => {
+  const example = {
+    schema_version: 1,
+    steps: [{
+      title: 'Exercise the lookup – read-only',
+      instructions: 'Paste the prompt into an isolated test agent.',
+      links: [{ label: 'Test file', url: 'https://github.example/sample/widget/blob/abc/validation.md#L2' }],
+      blocks: [{ label: 'Lookup', kind: 'prompt', text: 'Show the account’s matched records.\nRead only.' }],
+      pass: 'The output cites the matched records.'
+    }]
+  };
+  async function validate(value, mime = 'application/json') {
+    const bytes = Buffer.isBuffer(value) ? value : Buffer.from(JSON.stringify(value));
+    await validateAssetBytes({ id: 'owner-verification', mime, bytes: bytes.length, sha256: await digest(bytes) }, bytes);
+  }
+  await validate(example);
+  await validate(Buffer.from('Legacy guidance – read only.'), 'text/plain');
+  await assert.rejects(validate(Buffer.from([0xFF])), /UTF-8/);
+  await assert.rejects(validate({ ...example, steps: [] }), /runbook format/);
+  for (const unsafe of ['javascript:alert(1)', 'http://github.example', 'https://user:password@github.example']) {
+    const invalid = structuredClone(example);
+    invalid.steps[0].links[0].url = unsafe;
+    await assert.rejects(validate(invalid), /runbook format/);
+  }
+  const badBlock = structuredClone(example);
+  badBlock.steps[0].blocks[0].kind = 'html';
+  await assert.rejects(validate(badBlock), /runbook format/);
+});
 for(const [label,change] of [
   ['version',m=>m.schema_version=2],['missing field',m=>delete m.summary],
   ['secret field',m=>m.publication.token='unexpected'],['short SHA',m=>m.revision.head_sha='abc'],
