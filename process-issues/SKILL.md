@@ -310,6 +310,11 @@ Only verification explicitly classified as optional or `not applicable` may be d
 
 ### Publish opted-in review evidence
 
+When a PR needs an owner test or confirmation, put the instructions in the PR
+Review Hub as an [inline owner runbook](references/review-site-publication.md#write-the-owner-runbook).
+Verify the copy controls and direct source, scenario and reporting links on the
+private entry before linking to it from GitHub.
+
 Follow [review Site publication](references/review-site-publication.md#publish-and-retain-a-receipt). When delivery is optional, publish after a clean ready window. When required acceptance includes hosted evidence, publish and verify it while draft before entering that ready transition. Refresh GitHub head/status after the window; changed or unavailable heads make evidence stale or unknown. Use the retained finalized bundle for publish-only retries. Publication never resets correction/window budgets, expands ownership/scope, or authorizes merging. Keep code readiness and delivery results separate; missing required evidence follows the existing blocking rules.
 
 ## 9. Report the run

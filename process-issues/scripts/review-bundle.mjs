@@ -1,4 +1,6 @@
 /** Portable review-bundle v1 contract. No network or filesystem side effects. */
+import { RUNBOOK_ASSET_ID, parseRunbook } from './review-runbook.mjs';
+
 export const LIMITS = Object.freeze({manifest: 256 * 1024, file: 16 * 1024 * 1024,
   bundle: 32 * 1024 * 1024, assets: 8});
 const SHA = /^[a-f0-9]{40}$/;
@@ -195,7 +197,10 @@ export async function validateAssetBytes(asset, bytes) {
   } else {
     let content; try { content = new TextDecoder('utf-8',{fatal:true}).decode(bytes); } catch { throw new Error('asset: invalid UTF-8'); }
     text(content, 'output asset', LIMITS.file);
-    if (asset.mime === 'application/json') { try { JSON.parse(content); } catch { throw new Error('asset: invalid JSON'); } }
+    if (asset.mime === 'application/json') {
+      if (asset.id === RUNBOOK_ASSET_ID) parseRunbook(bytes);
+      else { try { JSON.parse(content); } catch { throw new Error('asset: invalid JSON'); } }
+    }
   }
 }
 export function validateConfig(c) {

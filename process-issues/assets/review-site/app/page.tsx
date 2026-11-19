@@ -1,5 +1,7 @@
 "use client";
 import {useEffect,useState} from "react";
+import OwnerRunbook from "./owner-runbook";
+import {RUNBOOK_ASSET_ID} from "../lib/review-runbook.mjs";
 type Review={pr_key:string;version:number;publication_key:string;manifest:any;observed_github:any;updated_at:string};
 const api="/api/review/v1";
 async function read(url:string){const r=await fetch(url);if(!r.ok)throw Error(r.status===401?"Sign in to open this private review.":"The review service is unavailable. Your GitHub PR remains authoritative.");return r.json();}
@@ -13,17 +15,22 @@ function Media({asset,publication,poster}:{asset:any;publication:string;poster?:
 }
 function Entry({review}:{review:Review}){
  const m=review.manifest,o=review.observed_github;
+ const runbook=m.assets.find((asset:any)=>asset.id===RUNBOOK_ASSET_ID&&(asset.mime==="application/json"||asset.mime==="text/plain"));
+ const media=m.assets.filter((asset:any)=>asset!==runbook);
+ const poster=media.find((asset:any)=>asset.mime==="image/png");
+ const assetUrl=(id:string)=>api+"/media/"+encodeURIComponent(review.publication_key)+"/"+id;
  const freshness=o.head_sha===null?"Freshness unknown":o.head_sha===m.revision.head_sha?"Matches head as of last check":"Stale evidence · head has changed";
  const [history,setHistory]=useState<any[]>([]),[historyError,setHistoryError]=useState(""),[showHistory,setShowHistory]=useState(false),[historyNext,setHistoryNext]=useState<string|null>(null);
  async function loadHistory(after=""){try{const d=await read(api+"/history?pr="+encodeURIComponent(review.pr_key)+(after?"&after="+encodeURIComponent(after):""));setHistory(v=>after?[...v,...d.publications]:d.publications);setHistoryNext(d.next);setShowHistory(true);}catch(e){setHistoryError((e as Error).message);}}
  return <article className="entry">
   <div className="eyebrow">PULL REQUEST #{m.pull_request.number} <span className="status">{o.state}{o.draft?" · draft":""}</span></div>
   <h1>{m.pull_request.title}</h1>
-  <div className="actions"><a className="button" href={m.pull_request.url} target="_blank" rel="noreferrer">Review on GitHub ↗</a><span className={freshness.startsWith("Matches")?"fresh":"warning"}>{freshness}</span></div>
+  <div className="actions"><a className="button" href={m.pull_request.url} target="_blank" rel="noreferrer">Review on GitHub ↗</a>{runbook&&<a href="#owner-verification">Owner verification</a>}<span className={freshness.startsWith("Matches")?"fresh":"warning"}>{freshness}</span></div>
   {m.demonstration.limitation&&<p className="notice">{m.demonstration.limitation}</p>}
   <section className="summary"><h2>What changed</h2><p>{m.summary.changed}</p><h3>Why it matters</h3><p>{m.summary.why}</p><h3>What to inspect</h3><p>{m.summary.inspect}</p></section>
+  {runbook&&<OwnerRunbook src={assetUrl(runbook.id)} mime={runbook.mime}/>}
   <section><div className="section-title"><h2>See the change</h2><span>{m.demonstration.state}</span></div><p>{m.demonstration.scenario}</p><p className="muted">{m.demonstration.outcome}</p>
-   {m.assets.length?m.assets.slice().sort((a:any,b:any)=>(a.mime==="video/mp4"?1:0)-(b.mime==="video/mp4"?1:0)).map((a:any)=><Media key={a.id} asset={a} publication={review.publication_key} poster={m.assets.find((p:any)=>p.mime==="image/png") ? api+"/media/"+encodeURIComponent(review.publication_key)+"/"+m.assets.find((p:any)=>p.mime==="image/png").id : undefined}/>):<p className="notice">{m.demonstration.kind==="nonvisual"?"Nonvisual change: inspect the recorded semantic evidence below.":"Review media is incomplete."}</p>}
+   {media.length?media.sort((a:any,b:any)=>(a.mime==="video/mp4"?1:0)-(b.mime==="video/mp4"?1:0)).map((a:any)=><Media key={a.id} asset={a} publication={review.publication_key} poster={poster?assetUrl(poster.id):undefined}/>):<p className="notice">{m.demonstration.kind==="nonvisual"?"Nonvisual change: inspect the recorded semantic evidence below.":"Review media is incomplete."}</p>}
   </section>
   <section><h2>Verification</h2>{m.acceptance.map((c:any,i:number)=><details key={i} open={c.state!=="verified"}><summary><span>{c.criterion}</span><strong className={c.state==="verified"?"fresh":"warning"}>{c.state}</strong></summary>
    {["automated","runtime","output","delivery"].map(k=><div key={k}><h4>{k}</h4>{c[k].length?c[k].map((e:any,j:number)=><p key={j}><b>{e.result}</b> · {e.description}{e.reason&&<span className="muted"> — {e.reason}</span>}</p>):<p className="muted">No evidence recorded in this layer.</p>}</div>)}{c.limitation&&<p className="notice">{c.limitation}</p>}
