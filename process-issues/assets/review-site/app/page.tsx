@@ -29,9 +29,9 @@ function Entry({review}:{review:Review}){
   {m.demonstration.limitation&&<p className="notice">{m.demonstration.limitation}</p>}
   <section className="summary"><h2>What changed</h2><p>{m.summary.changed}</p><h3>Why it matters</h3><p>{m.summary.why}</p><h3>What to inspect</h3><p>{m.summary.inspect}</p></section>
   {runbook&&<OwnerRunbook src={assetUrl(runbook.id)} mime={runbook.mime}/>}
-  {(!runbook||media.length>0||m.demonstration.kind==="ui")&&<section><div className="section-title"><h2>See the change</h2><span>{m.demonstration.state}</span></div><p>{m.demonstration.scenario}</p><p className="muted">{m.demonstration.outcome}</p>
+  <section><div className="section-title"><h2>See the change</h2><span>{m.demonstration.state}</span></div><p>{m.demonstration.scenario}</p><p className="muted">{m.demonstration.outcome}</p>
    {media.length?media.sort((a:any,b:any)=>(a.mime==="video/mp4"?1:0)-(b.mime==="video/mp4"?1:0)).map((a:any)=><Media key={a.id} asset={a} publication={review.publication_key} poster={poster?assetUrl(poster.id):undefined}/>):<p className="notice">{m.demonstration.kind==="nonvisual"?"Nonvisual change: inspect the recorded semantic evidence below.":"Review media is incomplete."}</p>}
-  </section>}
+  </section>
   <section><h2>Verification</h2>{m.acceptance.map((c:any,i:number)=><details key={i} open={c.state!=="verified"}><summary><span>{c.criterion}</span><strong className={c.state==="verified"?"fresh":"warning"}>{c.state}</strong></summary>
    {["automated","runtime","output","delivery"].map(k=><div key={k}><h4>{k}</h4>{c[k].length?c[k].map((e:any,j:number)=><p key={j}><b>{e.result}</b> · {e.description}{e.reason&&<span className="muted"> — {e.reason}</span>}</p>):<p className="muted">No evidence recorded in this layer.</p>}</div>)}{c.limitation&&<p className="notice">{c.limitation}</p>}
   </details>)}</section>
