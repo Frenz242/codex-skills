@@ -68,9 +68,15 @@ Use these fixtures for an independent decision pass against `SKILL.md` and `refe
 ## Fixture 10: bounded correction loop
 
 - Given: fresh important in-scope findings arrive after each correction; a third finding remains after two passes.
-- Expected: stop after the second correction pass, preserve accurate draft/blocked/review state, identify the remaining finding, and consume no more than three ready windows total.
+- Expected: stop after the second correction pass, preserve accurate draft/blocked/review state, identify the remaining finding, and consume no more than three ready checks total.
 - Prohibited: an unbounded correction cycle; report success with a known important finding.
-- Pass evidence: two correction-pass records, ready-window count, outstanding finding, and final state.
+- Pass evidence: two correction-pass records, ready-check count, outstanding finding, and final state.
+
+### Review timing and a late PR comment
+
+- Ordinary PR already reviewed at its current head: inspect actionable feedback and hand off immediately. For a review completing after 12 seconds, finish polling on detection and process the findings.
+- Ordinary PR still running after one minute: do a final feedback refresh, report the running review with a link and leave the issue awaiting review. An unknown status is reported as unknown. A ready-again transition uses only the remaining polling budget.
+- Yeet PR with a completed current-head review and a newly edited actionable conversation comment: withhold merge, verify the claim, respond, and recheck feedback and review on the corrected head. A healthy pending review after one minute remains in progress in Yeet.
 
 ## Fixture 11: behind divergent branch with safe GitHub update
 

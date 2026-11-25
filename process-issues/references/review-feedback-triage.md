@@ -117,13 +117,13 @@ An independent urgent follow-up is eligible for same-invocation implementation o
 
 Merely labeling it ready is not starting it. Use the next available issue slot for an eligible urgent follow-up. Ordinary runs may expedite one follow-up group within the confirmed issue budget. In yeet mode eligible follow-ups join the same queue and deadline as other work. Urgency never creates extra slots or expands a lane. A follow-up blocked on unmerged source-PR changes waits for that dependency.
 
-## 6. Finite correction and ready-window budgets
+## 6. Correction passes and review polling
 
 Take one initial feedback snapshot and batch verified important in-scope corrections into a coherent pass. Refresh after pushing and verifying. Allow at most two correction passes per pull request per invocation. Unchanged handled comments do not restart work; new independent suggestions become follow-ups.
 
 If a confirmed important or blocking finding remains when the correction budget ends, stop with the pull request in its accurate draft, blocked, or review state. Identify the finding and required next action. Urgent follow-up processing does not replenish the source pull request budget.
 
-The linked-issue ready check remains a full 60 seconds. Permit at most the initial ready window plus one new window after each allowed correction pass: three windows total. Non-blocking follow-ups, duplicates, and unchanged evidence do not reset the cycle. Stop repeating correction windows once that allowance is exhausted. In yeet mode, monitoring an outstanding GitHub review or merge queue continues for already-admitted issues under the deadline and handoff rules. Avoid duplicate review requests for the same head.
+Follow the [ready PR feedback and review check](../SKILL.md#publish-review-ready-pull-requests). Check immediately, and refresh comments and status at handoff. Ordinary polling ends on completion or after at most one minute total per PR per invocation. Retain the two-pass correction limit. Yeet continues monitoring healthy pending reviews and merge queues for admitted issues. Avoid duplicate review requests for the same head.
 
 ## 7. GitHub Update branch safety
 
@@ -157,7 +157,7 @@ For every inventoried pull request, retain:
 - follow-up issue identity and each direction of the link;
 - thread response/resolution state and remaining merge gates;
 - urgent notification and expedited-work state;
-- correction passes and ready windows consumed; and
+- correction passes and polling time consumed; and
 - branch-update category, old/base/new SHAs, GitHub result, and post-update refresh evidence.
 
 Issue creation, a successful branch update, or checks from an old head never prove that a finding is fixed or a pull request is merge-ready.
