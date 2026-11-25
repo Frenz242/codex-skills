@@ -287,11 +287,11 @@ A failed final delivery/read-back retains server state and local evidence but
 does not return a verified-delivery success; retry reconciles by key. No
 automatic polling silently refreshes the gallery.
 
-In yeet mode, publish draft and subsequent [progress updates](yeet-mode.md#keep-the-pr-review-hub-current) throughout the run using this same publisher. Outside those progress updates, optional publication occurs after the existing clean 60-second ready window.
+In yeet mode, publish draft and subsequent [progress updates](yeet-mode.md#keep-the-pr-review-hub-current) throughout the run using this same publisher. Outside those progress updates, optional publication occurs after the ready feedback check finds no known blockers.
 Required evidence is captured/published/verified while draft, before entering
-that transition. Refresh head/status after the window; replace or explicitly
+that transition. Refresh head/status after the check; replace or explicitly
 invalidate stale evidence. Capture/publication never resets the two correction
-passes, three ready windows, ownership limits or explicit merge authorization.
+passes, the ordinary review polling budget, ownership limits or explicit merge authorization.
 
 Missing optional media does not erase independently verified code evidence.
 Missing required media/delivery stays not verified and follows existing draft/

@@ -31,7 +31,7 @@ GitHub/Sites state merely to exercise these descriptions.
 | Concurrent same PR | Overlapping requests produce one current winner and conflict/history for the other; CAS cannot silently replace it. |
 | Concurrent different PRs/repositories | Independent pointers retain both records; equal PR numbers across repositories remain distinct. |
 | New head/Update branch | Final observation marks older media stale; null head is unknown. Never claim SHA order. |
-| Comment during ready window | Original full 60-second check, two correction passes and three-window bound remain. Important findings return PR to draft. Capture cannot restart budget. |
+| Comment during ready check | An important comment found on immediate check, while polling or at handoff returns the PR to draft. Capture never resets the ordinary one-minute polling budget or the two correction passes. |
 | Optional upload/media failure | Preserve independently verified code state; report delivery separately and retry finalized evidence only. |
 | Required media missing | Criterion stays not verified and draft/blocked rules apply; current implementation PR uses Refs. |
 | Owner/viewer identity | Native owner-private metadata required; separate server publisher key; browser Origin/Cookie writes rejected. Hosted service credential alone failed write authorization in preflight. |
