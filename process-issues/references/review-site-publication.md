@@ -287,7 +287,7 @@ A failed final delivery/read-back retains server state and local evidence but
 does not return a verified-delivery success; retry reconciles by key. No
 automatic polling silently refreshes the gallery.
 
-Optional publication occurs after the existing clean 60-second ready window.
+In yeet mode, publish draft and subsequent [progress updates](yeet-mode.md#keep-the-pr-review-hub-current) throughout the run using this same publisher. Outside those progress updates, optional publication occurs after the existing clean 60-second ready window.
 Required evidence is captured/published/verified while draft, before entering
 that transition. Refresh head/status after the window; replace or explicitly
 invalidate stale evidence. Capture/publication never resets the two correction
