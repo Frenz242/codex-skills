@@ -115,7 +115,7 @@ An independent urgent follow-up is eligible for same-invocation implementation o
 6. apply `agent:in-progress` only after work actually starts; and
 7. implement, verify, publish, and report using the normal workflow.
 
-Merely labeling it ready is not starting it. Begin at most one expedited follow-up group per invocation. Use an available ordinary group slot first; if both default ordinary slots were already consumed when the urgent finding arrived, allow at most one additional expedited group. Explicit caps and lane boundaries always win. Never recurse this allowance. A follow-up blocked on unmerged source-PR changes is blocked, not ready for an implicit stacked pull request.
+Merely labeling it ready is not starting it. Use the next available issue slot for an eligible urgent follow-up. Ordinary runs may expedite one follow-up group within the confirmed issue budget. In yeet mode eligible follow-ups join the same queue and deadline as other work. Urgency never creates extra slots or expands a lane. A follow-up blocked on unmerged source-PR changes waits for that dependency.
 
 ## 6. Finite correction and ready-window budgets
 
@@ -123,7 +123,7 @@ Take one initial feedback snapshot and batch verified important in-scope correct
 
 If a confirmed important or blocking finding remains when the correction budget ends, stop with the pull request in its accurate draft, blocked, or review state. Identify the finding and required next action. Urgent follow-up processing does not replenish the source pull request budget.
 
-The linked-issue ready check remains a full 60 seconds. Permit at most the initial ready window plus one new window after each allowed correction pass: three windows total. Non-blocking follow-ups, duplicates, and unchanged evidence do not reset the cycle. Do not poll or request reviews indefinitely.
+The linked-issue ready check remains a full 60 seconds. Permit at most the initial ready window plus one new window after each allowed correction pass: three windows total. Non-blocking follow-ups, duplicates, and unchanged evidence do not reset the cycle. Stop repeating correction windows once that allowance is exhausted. In yeet mode, monitoring an outstanding GitHub review or merge queue continues for already-admitted issues under the deadline and handoff rules. Avoid duplicate review requests for the same head.
 
 ## 7. GitHub Update branch safety
 

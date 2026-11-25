@@ -6,9 +6,17 @@ This repository contains reusable Codex skills that provide repeatable workflows
 
 > **Independent project:** This is a community-maintained project for use with OpenAI Codex. It is not an official OpenAI project and is not affiliated with or endorsed by OpenAI.
 
-## Featured: process-issues + a private review Site
+## Featured workflow · process-issues and Yeet Mode
 
-**Turn GitHub issues into changes you can review—and see working.** [`process-issues`](process-issues/SKILL.md) works through ready issues and PR feedback, implements scoped changes, runs relevant checks, and prepares pull requests for review. GitHub stays the source of truth, and merging requires your explicit instruction.
+**Say `Process issues`** to work through up to six GitHub issues per call, with up to three underway at once. Subagents implement and verify changes on feature branches and prepare pull requests for review. A larger batch requires your confirmation. [Process Issues skill](process-issues/SKILL.md)
+
+**Say `Yeet process issues`** to keep the project moving across batches. The maintainer revisits blocked issues as dependencies land and merges eligible PRs after independent subagent review, completed GitHub code review on the current commit, and required checks and approvals. Decisions needing human judgment come back to you. After 12 hours the run stops taking new issues and finishes the ones underway. [Yeet Mode guide](process-issues/references/yeet-mode.md)
+
+The short command is enough. For a focused run, you can add an observable outcome and a scope boundary:
+
+> Yeet process issues for the import milestone. Done means a user can preview a CSV, correct a row and retry without creating duplicates. Billing changes are out of scope.
+
+On repositories using the private PR Review Hub, Yeet posts progress from the first draft through review and merge. Each PR shows what passed, which choices the maintainer made, and who owns the next action.
 
 Its optional **companion ChatGPT Site** brings the evidence together in a private, phone-friendly review hub:
 
@@ -17,7 +25,7 @@ Its optional **companion ChatGPT Site** brings the evidence together in a privat
 - Reuse capture routines during UI verification. Scripts collect and encode the media; the model checks selected checkpoints and investigates failures.
 - Opt into cleanup of merged-PR evidence during later manual workflow runs.
 
-Start with `$process-issues` in your repository. Follow the [review Site setup guide](https://github.com/Frenz242/codex-skills/blob/db3bc0cc5e5e111d0b3b5a4aee529c096578e771/process-issues/references/review-site-publication.md) to connect your own private Site.
+To connect your own private Site, follow the [review Site setup guide](process-issues/references/review-site-publication.md).
 
 ### See it in action: PR #50
 
