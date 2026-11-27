@@ -144,6 +144,34 @@ Run `health` for integrity, schema, journal, path classification, and counts. Fo
 
 The `backfill` command accepts only sanitized structured observations from durable Git/GitHub artifacts. It marks evidence as `historical-backfill` and records a unique source key so the same batch is not intentionally mined twice. Never ingest old transcripts, assume a session-history path, or crawl unrelated files.
 
+## Scoped historical discovery
+
+When review coverage is thin, use the installed launcher with `--read-only discover-history --repo OWNER/REPO` for each repository in scope. This lists issue numbers, states and update dates without opening the store. It reports truncation after 100 issues. For a larger scope, use `gh issue list --repo OWNER/REPO --state all --limit 100 --search "updated:START..END" --json number,state,updatedAt` with narrower date windows until each page is complete. A failed source read is a coverage gap.
+
+For a candidate, inspect its issue and comments, related PR feedback (including inline review comments), failed checks and the affected code or Git history locally. Establish the shared behavior and responsible component. Use the source issue number as the canonical incident for the issue, review thread, failed check and corrective PR concerning the same event. If records describe distinct incidents or ownership is ambiguous, reconcile that before importing. Never copy raw source bodies, transcripts, private links or logs into a manifest or report.
+
+Pass `discover-history --repo OWNER/REPO --manifest incidents.json --observer-skill-path PATH` to import generalized findings. Use `--context-path PATH` for repository targets. Each entry contains the source issue number, a sanitized observation following the recorder contract, and optionally the corroborated event timestamp and affected commit/content hash. Specify the affected skill's installed path on skill targets to identify its owner. Its current checkout identifies the owner only. Missing historical dates and versions stay unknown. Legacy backfills lack this provenance. Example manifest:
+
+```json
+[
+  {
+    "issue": 30,
+    "observation": {
+      "target_kind": "infrastructure",
+      "target_component": "artifact-handoff",
+      "category": "objective-failure",
+      "summary": "Generated artifact was inaccessible to its intended recipient.",
+      "severity": "medium",
+      "reusability": "high",
+      "confidence_tier": "objective-failure",
+      "suggestion_kind": "shared-infrastructure"
+    }
+  }
+]
+```
+
+The importer queries the scoped repository for closing PRs and verifies each merged commit is reachable from the current default branch. A completed issue with a verified closing merge gets a fixed disposition. Review the actual fix before considering a skill change validated. Public issue and PR links remain navigable; private references are keyed hashes. Overlapping imports refresh the same incident and its links. An unavailable source is reported by manifest position and can be retried. This command never opens or edits GitHub issues.
+
 ## Example outcomes
 
 - No notable evidence: one run row, zero observation rows.

@@ -25,12 +25,12 @@ import uuid
 from datetime import datetime, timezone
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 DATABASE_ENV = "CODEX_SKILL_FEEDBACK_DB"
 PLUGIN_EVAL_ROOT_ENV = "PLUGIN_EVAL_ROOT"
 DEFAULT_BUSY_TIMEOUT_MS = 1_500
 MAX_WRITE_ATTEMPTS = 3
-READ_ONLY_COMMANDS = {"health", "query", "history", "clusters", "plugin-eval-status"}
+READ_ONLY_COMMANDS = {"health", "query", "history", "clusters", "review", "plugin-eval-status"}
 
 OBSERVATION_CATEGORIES = {
     "explicit-user-correction": "The user explicitly corrected the skill or its result.",
@@ -411,6 +411,18 @@ def _write_with_retry(
     *,
     attempts: int = MAX_WRITE_ATTEMPTS,
 ) -> Any:
+    # Scoped imports wrap recorder, links and provenance in one outer write.
+    # A nested writer shares that transaction and the outer retry budget.
+    if connection.in_transaction:
+        connection.execute("SAVEPOINT feedback_write")
+        try:
+            result = operation(connection)
+        except BaseException:
+            connection.execute("ROLLBACK TO feedback_write")
+            connection.execute("RELEASE feedback_write")
+            raise
+        connection.execute("RELEASE feedback_write")
+        return result
     last_error: sqlite3.OperationalError | None = None
     for attempt in range(attempts):
         try:
@@ -745,7 +757,19 @@ def _migration_four(connection: sqlite3.Connection) -> None:
     )
 
 
-MIGRATIONS = {1: _migration_one, 2: _migration_two, 3: _migration_three, 4: _migration_four}
+def _migration_five(connection: sqlite3.Connection) -> None:
+    connection.execute("""
+        CREATE TABLE historical_incidents (
+            run_id TEXT PRIMARY KEY REFERENCES skill_runs(run_id),
+            event_at TEXT,
+            affected_version TEXT,
+            disposition TEXT NOT NULL CHECK(disposition IN ('open', 'fixed', 'unknown'))
+        )
+    """)
+
+
+MIGRATIONS = {1: _migration_one, 2: _migration_two, 3: _migration_three,
+              4: _migration_four, 5: _migration_five}
 
 
 def open_store(
@@ -1658,6 +1682,13 @@ def query_observations(
         params.append(_parse_timestamp(since, "since"))
     where = " WHERE " + " AND ".join(clauses) if clauses else ""
     params.append(max(1, min(limit, 1_000)))
+    has_provenance = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='historical_incidents'"
+    ).fetchone()
+    history_join = "LEFT JOIN historical_incidents h ON h.run_id=r.run_id" if has_provenance else ""
+    provenance = ("h.event_at AS historical_event_at, h.affected_version AS historical_affected_version,"
+                  " h.disposition AS historical_disposition" if has_provenance else
+                  "NULL AS historical_event_at, NULL AS historical_affected_version, NULL AS historical_disposition")
     rows = connection.execute(
         f"""
             SELECT o.observation_id, o.run_id, r.source_kind, o.primary_target_kind,
@@ -1666,11 +1697,12 @@ def query_observations(
                o.severity, o.reusability, o.confidence_tier, o.suggestion_kind,
                o.state, o.candidate_name, o.positive_evidence, o.created_at,
                rv.skill_name AS observer_skill, rv.repo_commit, rv.content_hash,
-                   rv.bundle_hash, rv.dirty, r.context_hash
+                   rv.bundle_hash, rv.dirty, r.context_hash, r.run_kind, {provenance}
             FROM observations o
             JOIN skill_runs r ON r.run_id = o.run_id
             LEFT JOIN skill_versions rv ON rv.version_id = r.skill_version_id
         LEFT JOIN skill_versions tv ON tv.version_id = o.primary_skill_version_id
+        {history_join}
         {where}
         ORDER BY o.created_at DESC
         LIMIT ?
@@ -1767,6 +1799,7 @@ def begin_evaluation(
             "holdoutHash": _hash_file(holdout_path) if holdout_path else None,
             "targetSkill": metadata["skill_name"],
             "beforeContentHash": metadata["content_hash"],
+            "beforeBundleHash": metadata["bundle_hash"],
             "status": "frozen",
         }
 
@@ -1872,8 +1905,8 @@ def decide_evaluation(
     def write(conn: sqlite3.Connection) -> dict[str, Any]:
         evaluation = conn.execute(
             """
-            SELECT e.backend, e.status, v.skill_name AS before_skill_name,
-                   v.content_hash AS before_content_hash
+            SELECT e.backend, e.status, e.holdout_hash, v.skill_name AS before_skill_name,
+                   v.bundle_hash AS before_bundle_hash
             FROM evaluations e
             JOIN skill_versions v ON v.version_id = e.target_skill_version_id
             WHERE e.evaluation_id = ?
@@ -1894,8 +1927,11 @@ def decide_evaluation(
         phases = {str(row["phase"]) for row in runs}
         if "baseline" not in phases or "experiment" not in phases:
             raise FeedbackStoreError("A decision requires a frozen baseline and at least one experiment")
-        latest_experiment = [row for row in runs if row["phase"] == "experiment"][-1]
-        protection = [row for row in runs if row["phase"] in {"regression", "holdout"}]
+        latest_experiment = max((row for row in runs if row["phase"] == "experiment"),
+                                key=lambda row: row["iteration"])
+        protection = [row for row in runs if row["phase"] in {"regression", "holdout"}
+                      and row["iteration"] == latest_experiment["iteration"]]
+        checked = {row["phase"] for row in protection}
 
         if decision == "keep":
             if evaluation["backend"] != "plugin-eval":
@@ -1904,6 +1940,10 @@ def decide_evaluation(
                 )
             if latest_experiment["result_status"] != "pass":
                 raise FeedbackStoreError("The latest experiment must pass before keep")
+            if evaluation["holdout_hash"] and "holdout" not in checked:
+                raise FeedbackStoreError("The frozen holdout must run before keep")
+            if (phases & {"regression", "holdout"}) - checked:
+                raise FeedbackStoreError("Repeat all protection checks for the latest experiment")
             if not protection or any(row["result_status"] != "pass" for row in protection):
                 raise FeedbackStoreError("Keep requires a passing regression or holdout check")
             if not after_metadata:
@@ -1921,8 +1961,8 @@ def decide_evaluation(
         if decision in {"keep", "recommend"}:
             if after_metadata["skill_name"] != evaluation["before_skill_name"]:
                 raise FeedbackStoreError("The evaluated skill target cannot change during an experiment")
-            if after_metadata["content_hash"] == evaluation["before_content_hash"]:
-                raise FeedbackStoreError("No focused skill-definition change was detected")
+            if after_metadata["bundle_hash"] == evaluation["before_bundle_hash"]:
+                raise FeedbackStoreError("No change to the evaluated skill bundle was detected")
 
         after_version_id = _upsert_skill_version(conn, after_metadata) if after_metadata else None
         conn.execute(
@@ -1939,6 +1979,7 @@ def decide_evaluation(
             "decision": decision,
             "status": final_status,
             "afterContentHash": after_metadata["content_hash"] if after_metadata else None,
+            "afterBundleHash": after_metadata["bundle_hash"] if after_metadata else None,
             "draftPrEligible": final_status == "promotable",
         }
 
@@ -2044,8 +2085,8 @@ def import_backfill(
         result = record_run(
             connection,
             skill_path=observer_skill_path,
-            invocation_mode="explicit",
-            outcome="success",
+            invocation_mode="unknown",
+            outcome="unknown",
             context_path=context_path,
             observations=backfill_specs,
             run_kind="backfill",
@@ -2112,6 +2153,107 @@ def import_backfill(
     final["sourceKey"] = safe_source_key
     final["alreadyProcessed"] = False
     return final
+
+
+def discover_history(connection, *, repo, records, observer_skill_path, context_path=None):
+    from history_sources import HistoryGap, inspect_incident, repository_metadata
+
+    if not observer_skill_path:
+        raise FeedbackStoreError("Historical import requires --observer-skill-path")
+    if len(records) > 100:
+        raise FeedbackStoreError("Scope each discovery batch to 100 or fewer incident entries")
+    incidents, gaps = {}, []
+    try:
+        branch, public = repository_metadata(repo)
+    except HistoryGap as exc:
+        return {"ok": False, "incidents": [], "coverageGaps": [str(exc)]}
+
+    salt = _privacy_salt(connection)
+
+    def private_key(kind, value):
+        material = f"{repo.casefold()}:{kind}:{value}".encode()
+        return hmac.new(salt, material, hashlib.sha256).hexdigest()
+
+    for index, item in enumerate(records, start=1):
+        if (not isinstance(item, dict) or set(item) - {"issue", "observation", "event_at", "affected_version"}
+                or type(item.get("issue")) is not int or item["issue"] <= 0
+                or not isinstance(item.get("observation"), dict)):
+            raise FeedbackStoreError("Expected a scoped issue number and sanitized observation")
+        number = item["issue"]
+        spec = dict(item["observation"], evidence_type="historical-backfill")
+        normalized = validate_observation_spec(spec)
+        owner = None
+        if spec["target_kind"] == "skill":
+            if not isinstance(spec.get("target_skill_path"), str) or not spec["target_skill_path"].strip():
+                raise FeedbackStoreError("Identify the affected skill separately from the importing skill")
+            target = Path(spec["target_skill_path"]).expanduser().resolve()
+            owner = _skill_name(target if target.name == "SKILL.md" else target / "SKILL.md")
+        event_at = item.get("event_at")
+        if event_at is not None:
+            if not isinstance(event_at, str) or not event_at.strip():
+                raise FeedbackStoreError("Expected historical event_at to be a timestamp")
+            event_at = _parse_timestamp(event_at, "event_at")
+            event_time = datetime.fromisoformat(event_at.replace("Z", "+00:00"))
+            if event_time.tzinfo is None:
+                raise FeedbackStoreError("Historical event_at must identify its time zone")
+            event_at = event_time.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        version = item.get("affected_version")
+        if version is not None and (not isinstance(version, str) or not re.fullmatch("[a-f0-9]{7,64}", version)):
+            raise FeedbackStoreError("Expected affected_version to be a historical commit or content hash")
+        try:
+            disposition, refs = inspect_incident(repo, number, branch)
+        except HistoryGap as exc:
+            gaps.append({"entry": index, "reason": str(exc)})
+            continue
+
+        def write(conn):
+            result = import_backfill(
+                conn, source_key="issue-" + private_key("issue", number), source_type="github",
+                observer_skill_path=observer_skill_path, observations=[spec], context_path=context_path,
+            )
+            run_id = result["runId"]
+            row = conn.execute("""
+                SELECT o.observation_id, o.primary_target_kind, o.target_component, o.summary,
+                       v.skill_name AS owner
+                FROM observations o LEFT JOIN skill_versions v ON v.version_id=o.primary_skill_version_id
+                WHERE o.run_id=?
+            """, (run_id,)).fetchone()
+            if row is None:
+                raise FeedbackStoreError("Scoped historical evidence must yield a material observation")
+            if result["alreadyProcessed"]:
+                if (row["primary_target_kind"], row["target_component"], row["owner"]) != (
+                    normalized["target_kind"], normalized["target_component"], owner
+                ):
+                    raise FeedbackStoreError("Conflicting historical owner for the same incident")
+            previous = conn.execute("SELECT * FROM historical_incidents WHERE run_id=?", (run_id,)).fetchone()
+            for name, value in (("event_at", event_at), ("affected_version", version)):
+                if previous and previous[name] and value and previous[name] != value:
+                    raise FeedbackStoreError("Conflicting historical attribution for the same incident")
+            conn.execute("""
+                INSERT INTO historical_incidents(run_id,event_at,affected_version,disposition)
+                VALUES(?,?,?,?) ON CONFLICT(run_id) DO UPDATE SET
+                    event_at=coalesce(historical_incidents.event_at,excluded.event_at),
+                    affected_version=coalesce(historical_incidents.affected_version,excluded.affected_version),
+                    disposition=excluded.disposition
+            """, (run_id, event_at, version, disposition))
+            for kind, value in refs:
+                if not public:
+                    ref = private_key(kind, value)
+                elif kind == "merge":
+                    ref = value
+                else:
+                    section = "issues" if kind == "issue" else "pull"
+                    ref = f"https://github.com/{repo}/{section}/{value}"
+                link_entity(conn, entity_type="observation", entity_id=row[0], link_type=kind, external_ref=ref)
+            return {"runId": run_id, "observationId": row[0], "alreadyProcessed": result["alreadyProcessed"],
+                    "retainedEarlierSummary": row["summary"] != normalized["summary"], "disposition": disposition}
+
+        result = _write_with_retry(connection, write)
+        if number in incidents:
+            result["alreadyProcessed"] = incidents[number]["alreadyProcessed"]
+            result["retainedEarlierSummary"] |= incidents[number]["retainedEarlierSummary"]
+        incidents[number] = result
+    return {"ok": not gaps, "incidents": list(incidents.values()), "coverageGaps": gaps}
 
 
 def health_report(connection: sqlite3.Connection, path: Path) -> dict[str, Any]:
@@ -2240,6 +2382,9 @@ def build_parser(*, non_blocking: bool = False) -> argparse.ArgumentParser:
 
     subparsers.add_parser("init", help="Initialize or migrate the database")
     subparsers.add_parser("health", help="Run integrity and durability checks")
+    review = subparsers.add_parser("review", help="Review coverage and recurring problems across sources")
+    review.add_argument("--skill", action="append", default=[], help="Known participating skill (repeatable)")
+    review.add_argument("--since", type=date_boundary, help="Include evidence since this ISO-8601 date or time (default UTC)")
     subparsers.add_parser("plugin-eval-status", help="Detect the preferred evaluation backend")
 
     record_run_parser = subparsers.add_parser("record-run", help="Record one completed skill or agent run")
@@ -2320,6 +2465,11 @@ def build_parser(*, non_blocking: bool = False) -> argparse.ArgumentParser:
     link_parser.add_argument("--link-type", choices=["issue", "pr", "merge", "outcome"], required=True)
     link_parser.add_argument("--external-ref", required=True)
 
+    discovery = subparsers.add_parser("discover-history", help="Inspect scoped GitHub history or import reviewed incidents")
+    discovery.add_argument("--repo", required=True)
+    discovery.add_argument("--manifest", help="Sanitized incident list; omit for a read-only issue inventory")
+    discovery.add_argument("--observer-skill-path")
+    discovery.add_argument("--context-path")
     backfill_parser = subparsers.add_parser("backfill", help="Import one sanitized historical evidence batch once")
     backfill_parser.add_argument("--source-key", required=True)
     backfill_parser.add_argument("--source-type", choices=["git-history", "github", "artifact", "other"], required=True)
@@ -2338,6 +2488,11 @@ def build_parser(*, non_blocking: bool = False) -> argparse.ArgumentParser:
 
 
 def _execute_command(args: argparse.Namespace, connection: sqlite3.Connection, path: Path) -> Any:
+    if args.command == "review":
+        from review_report import build_review_report
+
+        connection.execute("BEGIN")
+        return build_review_report(connection, participating_skills=args.skill, since=args.since)
     if args.command == "init":
         return {"ok": True, "databasePath": str(path), "schemaVersion": SCHEMA_VERSION}
     if args.command == "health":
@@ -2446,6 +2601,9 @@ def _execute_command(args: argparse.Namespace, connection: sqlite3.Connection, p
             observations=_load_json_argument(args.observation_json, args.observation_file),
             context_path=args.context_path,
         )
+    if args.command == "discover-history":
+        return discover_history(connection, repo=args.repo, records=_load_json_argument([], [args.manifest]),
+                                observer_skill_path=args.observer_skill_path, context_path=args.context_path)
     if args.command == "register-category":
         return register_lookup(
             connection,
@@ -2461,6 +2619,16 @@ def _execute_command(args: argparse.Namespace, connection: sqlite3.Connection, p
             description=args.description,
         )
     raise FeedbackStoreError(f"Unsupported command: {args.command}")
+
+
+def date_boundary(value: str) -> str:
+    try:
+        date = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("Expected an ISO-8601 date or timestamp") from exc
+    if date.tzinfo is None:
+        date = date.replace(tzinfo=timezone.utc)
+    return date.astimezone(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -2484,9 +2652,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "plugin-eval-status":
             _emit(plugin_eval_availability())
             return 0
+        if args.command == "discover-history" and args.manifest is None:
+            from history_sources import HistoryGap, inventory
+            try:
+                _emit(inventory(args.repo))
+                return 0
+            except HistoryGap as exc:
+                _emit({"ok": False, "coverageGaps": [str(exc)]})
+                return 2
         if args.read_only and args.command not in READ_ONLY_COMMANDS:
             raise FeedbackStoreError(f"{args.command} is not permitted in read-only mode")
-        if args.read_only:
+        if args.command == "review":
+            # stat distinguishes a missing store from a path we cannot inspect.
+            review_path = ensure_durable_database_path(Path(args.db) if args.db else default_database_path())
+            try:
+                review_path.stat()
+            except FileNotFoundError:
+                _emit({"ok": True, "coverage": {"storeStatus": "missing", "totalInvocations": None},
+                       "coverageGaps": ["No feedback store exists at the selected location."]})
+                return 0
+        if args.read_only or args.command == "review":
             connection, path = open_store_read_only(
                 args.db, busy_timeout_ms=args.busy_timeout_ms
             )
@@ -2494,8 +2679,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             connection, path = open_store(args.db, busy_timeout_ms=args.busy_timeout_ms)
         payload = _execute_command(args, connection, path)
         _emit(payload)
+        if args.command == "discover-history" and not payload["ok"]:
+            return 2
         return 0
     except (FeedbackStoreError, PrivacyError, sqlite3.Error, json.JSONDecodeError, OSError) as exc:
+        if args.command == "discover-history":
+            _emit({"ok": False, "error": type(exc).__name__,
+                   "coverageGaps": ["Could not import this history batch. Verify manifest readability, sanitized fields, ownership and provenance. Retry with the same source issues."]})
+            return 2
+        if args.command == "review":
+            _emit({"ok": False, "coverage": {"storeStatus": "unavailable", "totalInvocations": None},
+                   "coverageGaps": ["Could not read the feedback store. Check access and schema compatibility."],
+                   "error": type(exc).__name__})
+            return 2
         payload = {
             "ok": False,
             "error": exc.__class__.__name__,
@@ -2510,4 +2706,6 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    # The installer fingerprints the complete skill directory, including generated files.
+    sys.dont_write_bytecode = True
     raise SystemExit(main())

@@ -270,6 +270,8 @@ The recorder and review helper support these operations:
 | --- | --- |
 | `record-run` / `record` | Store a completed run and generalized observations |
 | `health` | Check database integrity, schema, journal mode, and path durability |
+| `review` | Read coverage and suggested recurring problems across skill, agent, and historical evidence |
+| `discover-history` | Inventory a scoped GitHub repository or import generalized incidents and verify their closing merges |
 | `query` / `history` | Inspect targeted evidence and lifecycle history |
 | `cluster` / `clusters` | Group evidence around canonical problems and aliases |
 | `mark` | Transition lifecycle state while preserving history |
