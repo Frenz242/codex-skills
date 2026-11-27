@@ -58,6 +58,12 @@ Alternate states include `deferred`, `invalid`, `duplicate`, `superseded`, `regr
 
 ## Targeted review path
 
+Start with the installed launcher's `--read-only review` command. Pass each verified participant with `--skill NAME` and optionally bound the review with `--since YYYY-MM-DD`. The window uses run completion or historical import time. Historical event dates are shown separately when known. Use coverage to explain which versions ran, which had no observations, and where data is missing. The total number of invocations is unknown. When coverage is thin, follow [scoped historical discovery](observation-protocol.md#scoped-historical-discovery) for the repositories in scope.
+
+Review suggested findings across observer and target labels. Check the recorded workaround or command against the installed bundle and current default branch. Confirm the symptom, assess repeated wording in the same context and examine positive evidence before persisting a group with `cluster`. Verify any claimed fix against its merged revision. Link the issue, PR, evaluation or generalized outcome using `link`. Report only generalized findings externally.
+
+When subsequent evidence resembles an addressed problem, compare its event date and affected bundle with the intervention. Reproduce it on the claimed version before using `mark` to move a monitored or confirmed group to `regressed`. Keep earlier evidence, default-branch checks and dispositions in the history.
+
 The recorder is paired with explicit consumption commands:
 
 - `health` validates infrastructure first.

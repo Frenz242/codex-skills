@@ -53,7 +53,8 @@ class RecorderLauncherIntegrationTests(unittest.TestCase):
         self.assertTrue(store.classify_database_path(self.root / "fixture.db")["durable"])
         self.scripts = self.root / "installed skills" / "improve-skills" / "scripts"
         self.scripts.mkdir(parents=True)
-        for name in ("feedback_store.py", "run_feedback_store.ps1", "run_feedback_store.sh"):
+        for name in ("feedback_store.py", "review_report.py", "history_sources.py",
+                     "run_feedback_store.ps1", "run_feedback_store.sh"):
             shutil.copy2(SKILL_ROOT / "scripts" / name, self.scripts / name)
         self.skill = make_skill(self.root, "participating skill")
         self.cwd = self.root / "unrelated project"
@@ -92,6 +93,11 @@ class RecorderLauncherIntegrationTests(unittest.TestCase):
         first = json.loads(minimal.stdout)
         self.assertTrue(first["ok"])
         self.assertEqual(0, first["observationCount"])
+        self.environment.pop("PYTHONDONTWRITEBYTECODE", None)
+        reviewed = invoke("--read-only", "review")
+        self.assertEqual(0, reviewed.returncode, reviewed.stderr)
+        self.assertEqual(1, json.loads(reviewed.stdout)["coverage"]["liveSkillRuns"])
+        self.assertFalse((self.scripts / "__pycache__").exists())
         with closing(sqlite3.connect(self.db)) as connection:
             self.assertEqual(
                 [(first["runId"], "success", 0)],

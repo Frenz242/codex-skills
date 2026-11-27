@@ -21,9 +21,9 @@ Improve reusable skills from generalized evidence. “No change needed” is suc
 1. Read applicable `AGENTS.md`, `README.md`, this skill, and needed references.
 2. Inspect Git status/branches/worktrees/remotes/identity and authoritative GitHub state. Synchronize per policy before mutation; preserve unrelated work.
 3. Inventory installed skills/versions and search skills, issues, and PRs before declaring missing capability.
-4. Run helper `health` and targeted queries. Detect `plugin-eval`; inspect its installed version before assuming syntax.
+4. Start every review with the launcher's `--read-only review`. Pass `--skill NAME` for each known participant, including skills with no recorded runs. Report coverage, gaps and candidate findings. When coverage is thin, follow the scoped historical discovery procedure in the evidence reference. Detect `plugin-eval` and inspect its installed version before evaluation.
 5. Keep run source (`skill` or `agent`) separate from evidence target. Group by problem, target, content hash, and distinct run. Consider tier, context, recency, old versions, and counter-evidence; cluster aliases.
-6. Classify as existing-skill, repository-rule, shared-infrastructure, new-skill, insufficient-evidence, or no-action.
+6. Verify suggested groups against the underlying behavior, installed bundle, current default branch and existing issues or PRs. Classify ownership, link the disposition and check later evidence for recurrence on the affected version.
 
 Always read [evidence-and-analysis.md](references/evidence-and-analysis.md). Before mutation, read [evaluation-and-publishing.md](references/evaluation-and-publishing.md). Read [observation-protocol.md](references/observation-protocol.md) for feedback work and [design-provenance.md](references/design-provenance.md) for methodology work.
 
