@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import {readFile,mkdir,writeFile,rename,realpath,lstat} from 'node:fs/promises';
 import path from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {isCliEntry} from './review-cli-entry.mjs';
 import {spawnSync} from 'node:child_process';
 import {loadConfig,inspectConfig,validateLocalBundle} from './review-bundle-cli.mjs';
 import {OWNER_FILE} from './review-cleanup-local.mjs';
@@ -53,6 +53,6 @@ async function main(){
  await writeFile(temp,JSON.stringify(receipt,null,2),{flag:'wx'});await rename(temp,target);
  return receipt;
 }
-if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
+if (isCliEntry(import.meta)) {
 try{console.log(JSON.stringify(await main(),null,2));}catch(e){console.error(JSON.stringify({ok:false,error:e.code||e instanceof SyntaxError?'Local input unavailable or invalid':e.message}));process.exitCode=1;}
 }

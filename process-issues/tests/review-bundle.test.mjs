@@ -1,7 +1,7 @@
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import assert from 'node:assert/strict';
-import {mkdtemp,readFile,writeFile,mkdir,rm,lstat} from 'node:fs/promises';
+import {mkdtemp,readFile,writeFile,mkdir,rm,lstat,symlink} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
@@ -9,6 +9,44 @@ import {publicationKey,validateManifest,validateAssetBytes,validateConfig,digest
 import {loadConfig,validateLocalBundle,inspectConfig} from '../scripts/review-bundle-cli.mjs';
 
 import {fixture} from './fixtures/review-bundles.mjs';
+
+test('review CLIs execute through the installed directory link and remain inert on import', async t => {
+  const root = await mkdtemp(path.join(tmpdir(), 'review-cli-entry-'));
+  t.after(() => rm(root, {recursive:true, force:true}));
+  const scripts = fileURLToPath(new URL('../scripts/', import.meta.url));
+  const alias = path.join(root, 'installed scripts');
+  await symlink(scripts, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  const importer = path.join(root, 'import-only.mjs');
+  await writeFile(importer, "import {pathToFileURL} from 'node:url';\nawait import(pathToFileURL(process.argv[2]));\n");
+  const invoke = (...args) => {
+    const result = spawnSync(process.execPath, args, {cwd:root, encoding:'utf8', timeout:10_000, windowsHide:true});
+    assert.ifError(result.error);
+    return result;
+  };
+
+  for (const [name, directory] of [['resolved', scripts], ['installed', alias]]) {
+    await t.test(name + ' configuration query returns a result', () => {
+      const result = invoke(path.join(directory, 'review-bundle-cli.mjs'), 'config', 'missing.json', '.');
+      assert.equal(result.status, 0);
+      assert.deepEqual(JSON.parse(result.stdout), {enabled:false, site_mutations:0});
+    });
+    for (const file of ['review-bundle-cli.mjs','review-capture-encode.mjs','review-cleanup-cli.mjs','review-publish-cli.mjs']) {
+      const cli = path.join(directory, file);
+      await t.test(name + ' ' + file + ' rejects invalid arguments', () => {
+        const result = invoke(cli, 'invalid');
+        assert.equal(result.status, 1);
+        assert.match(result.stderr, /Usage:/);
+      });
+      await t.test(name + ' ' + file + ' imports without running the CLI', () => {
+        const result = invoke(importer, cli);
+        assert.equal(result.status, 0);
+        assert.equal(result.stdout, '');
+        assert.equal(result.stderr, '');
+      });
+    }
+  }
+});
+
 async function seal(m) {m.publication.key=await publicationKey(m);return m;}
 test('valid nonvisual manifest, immutable identities and explicit freshness',async()=>{
   const m=await fixture();assert.equal((await validateManifest(m)).freshness,'matches observed head');

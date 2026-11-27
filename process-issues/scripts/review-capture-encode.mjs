@@ -3,7 +3,7 @@
 import {markEvidenceDirectory,OWNER_FILE} from './review-cleanup-local.mjs';
 import {readFile,writeFile,mkdir,lstat,realpath} from 'node:fs/promises';
 import path from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {isCliEntry} from './review-cli-entry.mjs';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 
@@ -77,7 +77,7 @@ export async function encodeCapture(manifestFile,outputDirectory,sourceSha) {
   await writeFile(path.join(output,'assets.json'),JSON.stringify(result,null,2)+'\n');
   return result;
 }
-if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
+if (isCliEntry(import.meta)) {
   try {
     check(process.argv.length===5,'Usage: review-capture-encode.mjs CAPTURE_JSON NEW_OUTPUT_DIRECTORY SOURCE_SHA');
     console.log(JSON.stringify(await encodeCapture(...process.argv.slice(2)),null,2));

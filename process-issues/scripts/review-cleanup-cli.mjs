@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import {readFile,writeFile,mkdir,realpath,readdir,lstat,rename} from 'node:fs/promises';
 import path from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {isCliEntry} from './review-cli-entry.mjs';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {loadConfig,inspectConfig} from './review-bundle-cli.mjs';
@@ -93,7 +93,7 @@ export async function runCleanup(args,{github=gh,readSecrets=secretInput,fetchIm
  }
  return result;
 }
-if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
+if (isCliEntry(import.meta)) {
 try{console.log(JSON.stringify(await runCleanup(process.argv.slice(2)),null,2));}
 catch(e){console.error(JSON.stringify({ok:false,error:e.code?'Cleanup input/storage operation failed; retained receipts support retry':e.message}));process.exitCode=1;}
 }

@@ -3,6 +3,7 @@
 import {readFile, lstat, realpath, readdir} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {isCliEntry} from './review-cli-entry.mjs';
 import {spawnSync} from 'node:child_process';
 import {LIMITS, publicationKey, validateManifest, validateAssetBytes, validateConfig} from './review-bundle.mjs';
 
@@ -95,7 +96,7 @@ async function main(args) {
     return validateLocalBundle(rest[0],rest[1],{decode:rest[2] !== '--integrity-only'});
   throw new Error('Usage: review-bundle-cli.mjs key MANIFEST | config CONFIG REPO_ROOT | validate MANIFEST ASSET_DIR [--integrity-only]');
 }
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isCliEntry(import.meta)) {
   try { console.log(JSON.stringify(await main(process.argv.slice(2)),null,2)); }
   catch (error) {
     // Never echo filesystem errors, stderr from media tools, or supplied payloads.
